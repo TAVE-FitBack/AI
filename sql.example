@@ -1,0 +1,286 @@
+CREATE TABLE `store` (
+                         `id`	UUID	NOT NULL,
+                         `name`	VARCHAR(100)	NOT NULL,
+                         `store_type`	VARCHAR(50)	NOT NULL,
+                         `phone`	VARCHAR(20)	NULL,
+                         `operating_hours`	VARCHAR(100)	NULL,
+                         `created_at`	TIMESTAMPTZ	NOT NULL,
+                         `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `users` (
+                        `id`	UUID	NOT NULL,
+                        `store_id`	UUID	NULL,
+                        `email`	VARCHAR(100)	NOT NULL,
+                        `nickname`	VARCHAR(50)	NOT NULL,
+                        `role`	VARCHAR(30)	NOT NULL	DEFAULT 'STAFF',
+                        `password`	TEXT	NOT NULL,
+                        `agree_marketing`	BOOLEAN	NOT NULL,
+                        `agree_terms`	BOOLEAN	NOT NULL,
+                        `email_verified`	BOOLEAN	NOT NULL,
+                        `created_at`	TIMESTAMPTZ	NOT NULL,
+                        `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `service` (
+                           `id`	UUID	NOT NULL,
+                           `store_id`	UUID	NOT NULL,
+                           `name`	VARCHAR(100)	NOT NULL,
+                           `description`	TEXT	NULL,
+                           `price`	DECIMAL(10,2)	NULL,
+                           `is_active`	BOOLEAN	NOT NULL,
+                           `created_at`	TIMESTAMPTZ	NOT NULL,
+                           `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `customer` (
+                            `id`	UUID	NOT NULL,
+                            `store_id`	UUID	NOT NULL,
+                            `registered_service_id`	UUID	NULL,
+                            `name`	VARCHAR(50)	NOT NULL,
+                            `gender`	VARCHAR(10)	NULL,
+                            `birth_date`	DATE	NULL,
+                            `phone_num`	VARCHAR(20)	NULL,
+                            `preferred_contact_channel`	VARCHAR(30)	NULL,
+                            `inflow_path`	VARCHAR(30)	NULL	DEFAULT 'OTHER',
+                            `status`	VARCHAR(20)	NOT NULL	DEFAULT 'UNREGISTERED',
+                            `first_consult_at`	DATE	NOT NULL,
+                            `latest_consult_at`	DATE	NOT NULL,
+                            `created_at`	TIMESTAMPTZ	NOT NULL,
+                            `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `consultation` (
+                                `id`	UUID	NOT NULL,
+                                `customer_id`	UUID	NOT NULL,
+                                `user_id`	UUID	NOT NULL,
+                                `consulted_service_id`	UUID	NULL,
+                                `consulted_at`	TIMESTAMPTZ	NOT NULL,
+                                `session_no`	INT	NOT NULL,
+                                `stage`	VARCHAR(20)	NOT NULL DEFAULT 'CONSULTATION',
+                                `summary`	TEXT	NULL,
+                                `source_type`	VARCHAR(10)	NOT NULL	DEFAULT 'DIRECT',
+                                `raw_text`	TEXT	NOT NULL,
+                                `visit_purpose`	TEXT	NULL,
+                                `experience_note`	TEXT	NULL,
+                                `positive_signal`	TEXT	NULL,
+                                `extra_note`	TEXT	NULL,
+                                `ai_parsed_at`	TIMESTAMPTZ	NULL,
+                                `created_at`	TIMESTAMPTZ	NOT NULL,
+                                `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `interest_service` (
+                                    `id`	UUID	NOT NULL,
+                                    `customer_id`	UUID	NOT NULL,
+                                    `service_id`	UUID	NOT NULL,
+                                    `created_at`	TIMESTAMPTZ	NOT NULL,
+                                    `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `follow_up` (
+                             `id`	UUID	NOT NULL,
+                             `consultation_id`	UUID	NOT NULL,
+                             `recommend_contact_date`	DATE	NOT NULL,
+                             `status`	VARCHAR(30)	NOT NULL	DEFAULT 'PENDING',
+                             `snoozed_until`	DATE	NULL,
+                             `memo`	TEXT	NULL,
+                             `created_at`	TIMESTAMPTZ	NOT NULL,
+                             `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `follow_up_ai_insight` (
+                                        `follow_up_id`	UUID	NOT NULL,
+                                        `persuasion_point`	JSONB	NOT NULL,
+                                        `caution_note`	TEXT	NULL,
+                                        `action_basis`	JSONB	NOT NULL,
+                                        `analyzed_at`	TIMESTAMPTZ	NULL,
+                                        `created_at`	TIMESTAMPTZ	NOT NULL,
+                                        `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `message_template` (
+                                    `id`	UUID	NOT NULL,
+                                    `follow_up_id`	UUID	NULL,
+                                    `event_target_id`	UUID	NULL,
+                                    `customer_id`	UUID	NOT NULL,
+                                    `message_id`	VARCHAR(100)	NULL,
+                                    `content`	TEXT	NOT NULL,
+                                    `version_type`	VARCHAR(20)	NOT NULL,
+                                    `tone_preset`	VARCHAR(20)	NOT NULL,
+                                    `delivery_status`	VARCHAR(20)	NULL,
+                                    `scheduled_at`	TIMESTAMPTZ	NOT NULL,
+                                    `generated_at`	TIMESTAMPTZ	NOT NULL,
+                                    `sent_at`	TIMESTAMPTZ	NULL,
+                                    `delivered_at`	TIMESTAMPTZ	NULL,
+                                    `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `event` (
+                         `id`	UUID	NOT NULL,
+                         `store_id`	UUID	NOT NULL,
+                         `service_id`	UUID	NULL,
+                         `title`	VARCHAR(200)	NOT NULL,
+                         `event_type`	VARCHAR(30)	NOT NULL,
+                         `description`	TEXT	NULL,
+                         `discount_rate`	DECIMAL(5,2)	NULL,
+                         `img_url`	VARCHAR(255)	NULL,
+                         `start_date`	DATE	NOT NULL,
+                         `end_date`	DATE	NOT NULL,
+                         `status`	VARCHAR(20)	NOT NULL,
+                         `created_at`	TIMESTAMPTZ	NOT NULL,
+                         `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `event_target` (
+                                `id`	UUID	NOT NULL,
+                                `customer_id`	UUID	NOT NULL,
+                                `event_id`	UUID	NOT NULL,
+                                `status`	VARCHAR(30)	NOT NULL,
+                                `created_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `task_checklist` (
+                                  `id`	UUID	NOT NULL,
+                                  `schedule_id`	UUID	NULL,
+                                  `customer_id`	UUID	NULL,
+                                  `title`	VARCHAR(200)	NOT NULL,
+                                  `task_type`	VARCHAR(30)	NOT NULL,
+                                  `due_date`	DATE	NULL,
+                                  `is_done`	BOOLEAN	NOT NULL	DEFAULT FALSE,
+                                  `done_at`	TIMESTAMPTZ	NULL,
+                                  `created_at`	TIMESTAMPTZ	NOT NULL,
+                                  `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `non_conversion_reason` (
+                                         `id`	UUID	NOT NULL,
+                                         `customer_id`	UUID	NOT NULL,
+                                         `consultation_id`	UUID	NULL,
+                                         `reason_type`	VARCHAR(50)	NOT NULL,
+                                         `role`	VARCHAR(20)	NULL	DEFAULT 'PRIMARY',
+                                         `reason_basis`	TEXT	NULL,
+                                         `confidence`	VARCHAR(20)	NULL,
+                                         `created_at`	TIMESTAMPTZ	NOT NULL,
+                                         `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `contact_result` (
+                                  `id`	UUID	NOT NULL,
+                                  `customer_id`	UUID	NOT NULL,
+                                  `follow_up_id`	UUID	NULL,
+                                  `result_status`	VARCHAR(20)	NOT NULL	DEFAULT 'NOT_CONTACTED',
+                                  `result_date`	DATE	NOT NULL,
+                                  `memo`	TEXT	NULL,
+                                  `created_at`	TIMESTAMPTZ	NOT NULL,
+                                  `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `schedule` (
+                            `id`	UUID	NOT NULL,
+                            `store_id`	UUID	NOT NULL,
+                            `customer_id`	UUID	NULL,
+                            `consultation_id`	UUID	NULL,
+                            `title`	VARCHAR(200)	NOT NULL,
+                            `schedule_type`	VARCHAR(30)	NOT NULL,
+                            `start_at`	TIMESTAMPTZ	NOT NULL,
+                            `end_at`	TIMESTAMPTZ	NOT NULL,
+                            `memo`	TEXT	NULL,
+                            `created_by`	UUID	NOT NULL,
+                            `created_at`	TIMESTAMPTZ	NOT NULL,
+                            `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `customer_activity_timeline` (
+                                              `id`	UUID	NOT NULL,
+                                              `store_id`	UUID	NOT NULL,
+                                              `customer_id`	UUID	NOT NULL,
+                                              `actor_user_id`	UUID	NOT NULL,
+                                              `activity_type`	VARCHAR(50)	NOT NULL,
+                                              `title`	VARCHAR(200)	NOT NULL,
+                                              `description`	TEXT	NULL,
+                                              `related_type`	VARCHAR(50)	NULL,
+                                              `related_id`	UUID	NULL,
+                                              `before_value`	JSONB	NULL,
+                                              `after_value`	JSONB	NULL,
+                                              `occurred_at`	TIMESTAMPTZ	NOT NULL,
+                                              `created_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `consultation_signal` (
+                                       `id`	UUID	NOT NULL,
+                                       `consultation_id`	UUID	NOT NULL,
+                                       `signal_type`	VARCHAR(50)	NOT NULL,
+                                       `signal_value`	VARCHAR(50)	NOT NULL,
+                                       `confidence`	VARCHAR(20)	NULL,
+                                       `evidence_text`	TEXT	NULL,
+                                       `created_at`	TIMESTAMPTZ	NOT NULL
+);
+
+CREATE TABLE `customer_ai_insight` (
+                                       `customer_id`	UUID	NOT NULL,
+                                       `lead_temperature`	VARCHAR(20)	NULL,
+                                       `temperature_basis`	TEXT	NULL,
+                                       `priority_score`	INT	NULL,
+                                       `analyzed_at`	TIMESTAMPTZ	NULL,
+                                       `created_at`	TIMESTAMPTZ	NOT NULL,
+                                       `updated_at`	TIMESTAMPTZ	NOT NULL
+);
+
+ALTER TABLE `store` ADD CONSTRAINT `PK_STORE` PRIMARY KEY (`id`);
+ALTER TABLE `users` ADD CONSTRAINT `PK_USERS` PRIMARY KEY (`id`);
+ALTER TABLE `service` ADD CONSTRAINT `PK_SERVICE` PRIMARY KEY (`id`);
+ALTER TABLE `customer` ADD CONSTRAINT `PK_CUSTOMER` PRIMARY KEY (`id`);
+ALTER TABLE `consultation` ADD CONSTRAINT `PK_CONSULTATION` PRIMARY KEY (`id`);
+ALTER TABLE `interest_service` ADD CONSTRAINT `PK_INTEREST_SERVICE` PRIMARY KEY (`id`);
+ALTER TABLE `follow_up` ADD CONSTRAINT `PK_FOLLOW_UP` PRIMARY KEY (`id`);
+ALTER TABLE `follow_up_ai_insight` ADD CONSTRAINT `PK_FOLLOW_UP_AI_INSIGHT` PRIMARY KEY (`follow_up_id`);
+ALTER TABLE `message_template` ADD CONSTRAINT `PK_MESSAGE_TEMPLATE` PRIMARY KEY (`id`);
+ALTER TABLE `event` ADD CONSTRAINT `PK_EVENT` PRIMARY KEY (`id`);
+ALTER TABLE `event_target` ADD CONSTRAINT `PK_EVENT_TARGET` PRIMARY KEY (`id`);
+ALTER TABLE `task_checklist` ADD CONSTRAINT `PK_TASK_CHECKLIST` PRIMARY KEY (`id`);
+ALTER TABLE `non_conversion_reason` ADD CONSTRAINT `PK_NON_CONVERSION_REASON` PRIMARY KEY (`id`);
+ALTER TABLE `contact_result` ADD CONSTRAINT `PK_CONTACT_RESULT` PRIMARY KEY (`id`);
+ALTER TABLE `schedule` ADD CONSTRAINT `PK_SCHEDULE` PRIMARY KEY (`id`);
+ALTER TABLE `customer_activity_timeline` ADD CONSTRAINT `PK_CUSTOMER_ACTIVITY_TIMELINE` PRIMARY KEY (`id`);
+ALTER TABLE `consultation_signal` ADD CONSTRAINT `PK_CONSULTATION_SIGNAL` PRIMARY KEY (`id`);
+ALTER TABLE `customer_ai_insight` ADD CONSTRAINT `PK_CUSTOMER_AI_INSIGHT` PRIMARY KEY (`customer_id`);
+
+ALTER TABLE `users` ADD CONSTRAINT `UK_USERS_EMAIL` UNIQUE (`email`);
+ALTER TABLE `users` ADD CONSTRAINT `UK_USERS_NICKNAME` UNIQUE (`nickname`);
+ALTER TABLE `consultation` ADD CONSTRAINT `UK_CONSULTATION_CUSTOMER_SESSION` UNIQUE (`customer_id`, `session_no`);
+ALTER TABLE `interest_service` ADD CONSTRAINT `UK_INTEREST_SERVICE_CUSTOMER_SERVICE` UNIQUE (`customer_id`, `service_id`);
+
+ALTER TABLE `users` ADD CONSTRAINT `FK_STORE_TO_USERS_1` FOREIGN KEY (`store_id`) REFERENCES `store` (`id`);
+ALTER TABLE `service` ADD CONSTRAINT `FK_STORE_TO_SERVICE_1` FOREIGN KEY (`store_id`) REFERENCES `store` (`id`);
+ALTER TABLE `customer` ADD CONSTRAINT `FK_STORE_TO_CUSTOMER_1` FOREIGN KEY (`store_id`) REFERENCES `store` (`id`);
+ALTER TABLE `customer` ADD CONSTRAINT `FK_SERVICE_TO_CUSTOMER_1` FOREIGN KEY (`registered_service_id`) REFERENCES `service` (`id`);
+ALTER TABLE `consultation` ADD CONSTRAINT `FK_CUSTOMER_TO_CONSULTATION_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `consultation` ADD CONSTRAINT `FK_USERS_TO_CONSULTATION_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`);
+ALTER TABLE `consultation` ADD CONSTRAINT `FK_SERVICE_TO_CONSULTATION_1` FOREIGN KEY (`consulted_service_id`) REFERENCES `service` (`id`);
+ALTER TABLE `interest_service` ADD CONSTRAINT `FK_CUSTOMER_TO_INTEREST_SERVICE_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `interest_service` ADD CONSTRAINT `FK_SERVICE_TO_INTEREST_SERVICE_1` FOREIGN KEY (`service_id`) REFERENCES `service` (`id`);
+ALTER TABLE `follow_up` ADD CONSTRAINT `FK_CONSULTATION_TO_FOLLOW_UP_1` FOREIGN KEY (`consultation_id`) REFERENCES `consultation` (`id`);
+ALTER TABLE `follow_up_ai_insight` ADD CONSTRAINT `FK_FOLLOW_UP_TO_FOLLOW_UP_AI_INSIGHT_1` FOREIGN KEY (`follow_up_id`) REFERENCES `follow_up` (`id`);
+ALTER TABLE `message_template` ADD CONSTRAINT `FK_FOLLOW_UP_TO_MESSAGE_TEMPLATE_1` FOREIGN KEY (`follow_up_id`) REFERENCES `follow_up` (`id`);
+ALTER TABLE `message_template` ADD CONSTRAINT `FK_EVENT_TARGET_TO_MESSAGE_TEMPLATE_1` FOREIGN KEY (`event_target_id`) REFERENCES `event_target` (`id`);
+ALTER TABLE `message_template` ADD CONSTRAINT `FK_CUSTOMER_TO_MESSAGE_TEMPLATE_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `event` ADD CONSTRAINT `FK_STORE_TO_EVENT_1` FOREIGN KEY (`store_id`) REFERENCES `store` (`id`);
+ALTER TABLE `event` ADD CONSTRAINT `FK_SERVICE_TO_EVENT_1` FOREIGN KEY (`service_id`) REFERENCES `service` (`id`);
+ALTER TABLE `event_target` ADD CONSTRAINT `FK_CUSTOMER_TO_EVENT_TARGET_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `event_target` ADD CONSTRAINT `FK_EVENT_TO_EVENT_TARGET_1` FOREIGN KEY (`event_id`) REFERENCES `event` (`id`);
+ALTER TABLE `task_checklist` ADD CONSTRAINT `FK_SCHEDULE_TO_TASK_CHECKLIST_1` FOREIGN KEY (`schedule_id`) REFERENCES `schedule` (`id`);
+ALTER TABLE `task_checklist` ADD CONSTRAINT `FK_CUSTOMER_TO_TASK_CHECKLIST_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `non_conversion_reason` ADD CONSTRAINT `FK_CUSTOMER_TO_NON_CONVERSION_REASON_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `non_conversion_reason` ADD CONSTRAINT `FK_CONSULTATION_TO_NON_CONVERSION_REASON_1` FOREIGN KEY (`consultation_id`) REFERENCES `consultation` (`id`);
+ALTER TABLE `contact_result` ADD CONSTRAINT `FK_CUSTOMER_TO_CONTACT_RESULT_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `contact_result` ADD CONSTRAINT `FK_FOLLOW_UP_TO_CONTACT_RESULT_1` FOREIGN KEY (`follow_up_id`) REFERENCES `follow_up` (`id`);
+ALTER TABLE `schedule` ADD CONSTRAINT `FK_STORE_TO_SCHEDULE_1` FOREIGN KEY (`store_id`) REFERENCES `store` (`id`);
+ALTER TABLE `schedule` ADD CONSTRAINT `FK_CUSTOMER_TO_SCHEDULE_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `schedule` ADD CONSTRAINT `FK_CONSULTATION_TO_SCHEDULE_1` FOREIGN KEY (`consultation_id`) REFERENCES `consultation` (`id`);
+ALTER TABLE `schedule` ADD CONSTRAINT `FK_USERS_TO_SCHEDULE_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+ALTER TABLE `customer_activity_timeline` ADD CONSTRAINT `FK_STORE_TO_CUSTOMER_ACTIVITY_TIMELINE_1` FOREIGN KEY (`store_id`) REFERENCES `store` (`id`);
+ALTER TABLE `customer_activity_timeline` ADD CONSTRAINT `FK_CUSTOMER_TO_CUSTOMER_ACTIVITY_TIMELINE_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
+ALTER TABLE `customer_activity_timeline` ADD CONSTRAINT `FK_USERS_TO_CUSTOMER_ACTIVITY_TIMELINE_1` FOREIGN KEY (`actor_user_id`) REFERENCES `users` (`id`);
+ALTER TABLE `consultation_signal` ADD CONSTRAINT `FK_CONSULTATION_TO_CONSULTATION_SIGNAL_1` FOREIGN KEY (`consultation_id`) REFERENCES `consultation` (`id`);
+ALTER TABLE `customer_ai_insight` ADD CONSTRAINT `FK_CUSTOMER_TO_CUSTOMER_AI_INSIGHT_1` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`);
