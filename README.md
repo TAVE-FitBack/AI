@@ -1,4 +1,4 @@
-# Fitback AI
+# Fitback AI - (AI한테 explore하라고 하면 토큰 줄일 수 있음)
 
 Fitback AI is the graph-projection and GraphRAG validation workspace for Fitback's store-management assistant.
 
