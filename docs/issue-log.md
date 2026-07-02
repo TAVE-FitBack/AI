@@ -32,6 +32,21 @@ GraphQL: Could not resolve to a Repository with the name 'TAVE-FitBack/AI'. (rep
 
 `gh repo view TAVE-FitBack/AI --json nameWithOwner,url,viewerPermission` fails with the same GraphQL repository visibility error even though `git push` succeeds. This means the currently configured GitHub API token cannot read/create issues for this org repository.
 
+Retried through the Codex GitHub app connector after branch push:
+
+```text
+repository_full_name: TAVE-FitBack/AI
+title: Implement mock GraphRAG ingestion benchmark
+```
+
+Result:
+
+```text
+GitHub API error 403: Resource not accessible by integration
+```
+
+This means the installed GitHub app/integration also lacks issue creation permission for this repository.
+
 Suggested issue body once GitHub CLI/API scopes are fixed:
 
 ```markdown
