@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+import pytest
 
 import fitback_ai.api as api_module
 from fitback_ai.api import app
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def use_heuristic_ai_provider(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "heuristic")
 
 
 def test_openapi_exposes_required_paths():

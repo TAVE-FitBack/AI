@@ -7,7 +7,7 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 - Spring Boot 서버가 호출할 수 있는 FastAPI AI HTTP 계약 구현
 - 결정적 mock 매장 관리 데이터 생성, Neo4j AuraDB 적재, 그래프 카운트 검증
 
-현재 FastAPI 응답은 외부 LLM을 호출하지 않고 결정적 휴리스틱으로 생성됩니다.
+현재 FastAPI 응답은 `XAI_API_KEY` 또는 `AI_API_KEY`가 설정되어 있으면 Grok/xAI API를 호출하고, 키가 없으면 로컬 개발용 결정적 휴리스틱으로 생성됩니다.
 
 ## 먼저 확인할 것
 
@@ -70,10 +70,23 @@ python -m venv .venv
 - `fastapi==0.139.0`
 - `uvicorn==0.38.0`
 - `neo4j==5.28.1`
+- `openai==2.44.0`
 - `pytest==8.4.1`
 - `httpx==0.28.1`
 
 ## FastAPI 서비스
+
+Grok/xAI 연동 환경 변수:
+
+```env
+AI_PROVIDER=auto
+XAI_API_KEY=your-xai-api-key
+XAI_MODEL=grok-4.5
+XAI_BASE_URL=https://api.x.ai/v1
+AI_TIMEOUT_SECONDS=25
+```
+
+`AI_PROVIDER=auto`에서는 `XAI_API_KEY` 또는 호환 alias인 `AI_API_KEY`가 있으면 Grok을 사용하고, 키가 없으면 로컬 휴리스틱을 사용합니다. 운영에서는 `XAI_API_KEY`를 권장합니다.
 
 로컬 AI 서버 실행:
 
@@ -203,6 +216,19 @@ API 테스트 범위:
 - 정상 성공 응답 확인
 - validation 실패 시 `422` 확인
 - 내부 처리 오류 시 `code: AI_PROCESSING_FAILED` JSON 확인
+- Grok/xAI provider가 `https://api.x.ai/v1`, `grok-4.5`, `response_format: json_schema`로 구조화 응답을 요청하는지 fake client로 확인
+
+최근 검증 결과:
+
+```text
+python -m compileall -q src tests
+PASS
+
+python -m pytest -q
+14 passed, 1 warning
+```
+
+참고: 실제 Grok API 호출은 비용이 발생할 수 있어 자동 테스트에서 실행하지 않습니다. 운영 키 검증은 로컬에서 `AI_PROVIDER=xai`와 `XAI_API_KEY`를 설정한 뒤 FastAPI endpoint를 직접 호출해 확인합니다.
 
 ## Neo4j Mock Graph 명령
 
@@ -359,8 +385,8 @@ DETACH DELETE n
 
 ## 현재 제한 사항
 
-- FastAPI 응답은 실제 LLM 출력이 아니라 결정적 휴리스틱입니다.
-- OpenAI/LLM 연동은 아직 구현되어 있지 않습니다.
+- Grok/xAI 연동은 구현되어 있지만 실제 운영 품질은 Spring 개발 환경에서 추가 통합 테스트가 필요합니다.
+- `AI_PROVIDER=heuristic` 또는 API key가 없는 `auto` 모드는 실제 LLM 출력이 아니라 결정적 휴리스틱입니다.
 - embedding/vector index는 아직 생성하지 않습니다.
 - Spring 개발 환경에서 `AI_BASE_URL`로 실제 통합 테스트를 추가로 수행해야 합니다.
 - Aura Agent/Bloom이 graph를 올바르게 조회하려면 별도의 Cypher tool이나 prompt가 필요할 수 있습니다.
