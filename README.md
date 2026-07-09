@@ -193,6 +193,281 @@ Invoke-RestMethod -Method Post `
   }'
 ```
 
+## 예상 상황별 입력/출력 예시
+
+Spring 또는 프론트에서 받은 자연어 질문/상황을 FastAPI 요청 body로 정리해 보내면, AI provider는 아래처럼 계약된 JSON object를 반환합니다. Grok/xAI를 사용하는 운영 환경에서는 AI가 같은 응답 schema에 맞춰 생성하고, 로컬 휴리스틱 모드에서는 테스트 가능한 결정적 예시 응답을 반환합니다.
+
+### 1. 문의 내용 중간 평가
+
+예상 질문:
+
+```text
+고객이 "가격이랑 주 3회 PT 가능 여부가 궁금해요"라고 문의했는데, 상담 전에 입력 내용이 충분한지 확인해줘.
+```
+
+FastAPI 입력:
+
+```json
+{
+  "rawText": "가격과 주 3회 PT 가능 여부를 문의했습니다.",
+  "serviceName": "퍼스널 트레이닝",
+  "inquiryStatus": "RECEIVED",
+  "customerInfo": {
+    "name": "홍길동",
+    "gender": "MALE",
+    "birthDate": "1995-04-12"
+  }
+}
+```
+
+AI 출력:
+
+```json
+{
+  "isValid": true,
+  "warnings": [],
+  "suggestions": [
+    "퍼스널 트레이닝 상담 목적과 방문 가능 시간을 확인해 주세요."
+  ]
+}
+```
+
+### 2. 상담 내용 중간 평가
+
+예상 질문:
+
+```text
+상담 메모에 "체중 감량 목표, 평일 저녁 가능" 정도만 적혀 있는데 AI 분석 전에 부족한 내용이 있는지 확인해줘.
+```
+
+FastAPI 입력:
+
+```json
+{
+  "rawText": "체중 감량을 목표로 평일 저녁 운동 가능 여부를 상담했습니다.",
+  "serviceName": "퍼스널 트레이닝",
+  "customerInfo": {
+    "name": "홍길동",
+    "gender": "MALE",
+    "birthDate": "1995-04-12"
+  }
+}
+```
+
+AI 출력:
+
+```json
+{
+  "isValid": true,
+  "warnings": [],
+  "suggestions": [
+    "퍼스널 트레이닝 상담 목적과 방문 가능 시간을 확인해 주세요."
+  ]
+}
+```
+
+### 3. 상담 AI 분석
+
+예상 질문:
+
+```text
+가격 때문에 PT 등록을 망설이는 고객이야. 이 상담 내용을 분석해서 미전환 사유와 다음 행동을 추천해줘.
+```
+
+FastAPI 입력:
+
+```json
+{
+  "customer": {
+    "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+    "name": "홍길동",
+    "gender": "MALE",
+    "birthDate": "1995-04-12",
+    "phoneNum": "010-1234-5678",
+    "preferredContactChannel": "KAKAO",
+    "status": "PENDING",
+    "inflowPathId": "71564cdc-6ad1-4978-a74e-150c576ce13c",
+    "inflowPathName": "인스타그램"
+  },
+  "consultation": {
+    "consultationId": "6570aa21-d458-4885-9e69-d984fea51830",
+    "sessionNo": 1,
+    "consultedAt": "2026-07-09T14:30:00+09:00",
+    "consultedServiceId": "88d53bb7-7210-4e77-a0c4-01778a54d68d",
+    "stage": "CONSULTATION",
+    "sourceType": "DIRECT",
+    "rawText": "체중 감량이 목표이고 가격을 고민 중입니다."
+  },
+  "service": {
+    "serviceId": "88d53bb7-7210-4e77-a0c4-01778a54d68d",
+    "serviceName": "퍼스널 트레이닝",
+    "description": "주 3회 1:1 트레이닝",
+    "price": 600000
+  },
+  "storeContext": {
+    "storeId": "28f43532-f2fc-4581-827e-880d06f3cd88",
+    "storeType": "GYM",
+    "registrationStatus": "PENDING"
+  }
+}
+```
+
+AI 출력:
+
+```json
+{
+  "summary": "홍길동 고객은 퍼스널 트레이닝 상담에서 PRICE 관련 보류 신호를 보였습니다.",
+  "customerInsight": {
+    "leadTemperature": "WARM",
+    "temperatureBasis": "퍼스널 트레이닝 상담 내용과 PRICE 신호를 함께 고려했습니다.",
+    "priorityScore": 80
+  },
+  "nonConversionReasons": [
+    {
+      "reasonType": "PRICE",
+      "role": "PRIMARY",
+      "reasonBasis": "체중 감량이 목표이고 가격을 고민 중입니다.",
+      "confidence": "HIGH"
+    }
+  ],
+  "nextBestAction": {
+    "title": "예산에 맞는 상품 안내",
+    "description": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
+  },
+  "followUp": {
+    "recommendContactDate": "2026-07-12",
+    "memo": "KAKAO로 예산에 맞는 상품 안내 내용을 안내"
+  },
+  "followUpInsight": {
+    "persuasionPoint": {
+      "keyMessage": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
+    },
+    "cautionNote": "PRICE 이슈를 압박하지 말고 선택지를 제안합니다.",
+    "actionBasis": {
+      "title": "예산에 맞는 상품 안내",
+      "description": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
+    }
+  }
+}
+```
+
+### 4. 다음 행동 추천
+
+예상 질문:
+
+```text
+이미 AI 분석 결과가 있어. 가격 부담이 1순위 미전환 사유인 고객에게 다음 연락 액션을 추천해줘.
+```
+
+FastAPI 입력:
+
+```json
+{
+  "customer": {
+    "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+    "status": "PENDING"
+  },
+  "latestConsultation": {
+    "consultationId": "6570aa21-d458-4885-9e69-d984fea51830",
+    "summary": "가격 부담으로 보류",
+    "rawText": "가격이 부담되어 고민 중입니다."
+  },
+  "aiAnalysis": {
+    "leadTemperature": "WARM",
+    "temperatureBasis": "운동 의사는 명확하지만 가격 고민이 있습니다.",
+    "nonConversionReasons": [
+      {
+        "reasonType": "PRICE",
+        "role": "PRIMARY",
+        "reasonBasis": "가격 부담"
+      }
+    ]
+  }
+}
+```
+
+AI 출력:
+
+```json
+{
+  "priorityScore": 80,
+  "nextBestAction": {
+    "title": "예산에 맞는 상품 안내",
+    "description": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
+  },
+  "followUp": {
+    "recommendContactDate": "2026-07-11",
+    "memo": "예산에 맞는 상품 안내 후속 연락"
+  },
+  "followUpInsight": {
+    "persuasionPoint": {
+      "keyMessage": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
+    },
+    "cautionNote": "PRICE 이슈를 압박하지 말고 선택지를 제안합니다.",
+    "actionBasis": {
+      "title": "예산에 맞는 상품 안내",
+      "description": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
+    }
+  }
+}
+```
+
+### 5. 고객 메시지 생성
+
+예상 질문:
+
+```text
+가격 때문에 고민 중인 고객에게 카카오톡으로 보낼 친근한 후속 메시지를 만들어줘.
+```
+
+FastAPI 입력:
+
+```json
+{
+  "customer": {
+    "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+    "name": "홍길동",
+    "preferredContactChannel": "KAKAO",
+    "status": "PENDING"
+  },
+  "latestConsultation": {
+    "consultationId": "6570aa21-d458-4885-9e69-d984fea51830",
+    "summary": "가격 부담으로 보류"
+  },
+  "aiInsight": {
+    "leadTemperature": "WARM",
+    "priorityScore": 75
+  },
+  "nonConversionReasons": [
+    {
+      "reasonType": "PRICE",
+      "role": "PRIMARY",
+      "reasonBasis": "가격 부담"
+    }
+  ],
+  "nextBestAction": {
+    "title": "예산에 맞는 상품 안내",
+    "description": "예산별 상품을 제안합니다."
+  },
+  "event": null,
+  "messageOptions": {
+    "tonePreset": "FRIENDLY",
+    "versionType": "STANDARD",
+    "additionalInstruction": "첫 문장에 고객 이름을 넣어 주세요."
+  }
+}
+```
+
+AI 출력:
+
+```json
+{
+  "content": "홍길동님, 상담 때 말씀해주신 부분을 바탕으로 예산에 맞는 상품 안내를 드립니다. 예산별 상품을 제안합니다. PRICE 부담을 줄일 수 있게 선택지를 정리했습니다. 첫 문장에 고객 이름을 넣어 주세요.",
+  "versionType": "STANDARD",
+  "tonePreset": "FRIENDLY"
+}
+```
+
 ## 테스트
 
 전체 테스트:
