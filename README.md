@@ -218,6 +218,21 @@ API 테스트 범위:
 - 내부 처리 오류 시 `code: AI_PROCESSING_FAILED` JSON 확인
 - Grok/xAI provider가 `https://api.x.ai/v1`, `grok-4.5`, `response_format: json_schema`로 구조화 응답을 요청하는지 fake client로 확인
 
+API별 호출 테스트:
+
+| API | 테스트 함수 | 확인 내용 |
+| --- | --- | --- |
+| `GET /docs` | `test_docs_endpoint_is_available` | Swagger UI 문서 endpoint가 `200`과 `text/html`로 응답하는지 확인 |
+| `GET /openapi.json` | `test_openapi_exposes_required_paths` | Spring에서 호출할 5개 POST path가 OpenAPI schema에 노출되는지 확인 |
+| `POST /ai/v1/inquiries/check-preview` | `test_inquiry_preview_accepts_camel_case_and_returns_json_object` | camelCase 요청을 받고 `isValid`, `warnings`, `suggestions` JSON을 반환하는지 확인 |
+| `POST /ai/v1/consultations/check-preview` | `test_consultation_preview_accepts_camel_case_and_returns_json_object` | 상담 preview 요청이 `200`과 `isValid: true`로 응답하는지 확인 |
+| `POST /ai/v1/consultations/analyze` | `test_consultation_analyze_returns_required_fields` | `summary`, `customerInsight`, `nonConversionReasons`, `nextBestAction`, `followUp`, `followUpInsight` 필수 필드를 반환하는지 확인 |
+| `POST /ai/v1/consultations/analyze` | `test_consultation_analyze_rejects_bad_datetime` | 잘못된 datetime 입력을 `422` validation error로 거절하는지 확인 |
+| `POST /ai/v1/consultations/next-action` | `test_next_action_returns_required_contract` | `priorityScore`, `nextBestAction`, `followUp` 계약 필드를 반환하는지 확인 |
+| `POST /ai/v1/messages/generate` | `test_message_generate_returns_requested_enums` | 요청한 `tonePreset`, `versionType`을 유지하고 메시지 본문을 반환하는지 확인 |
+| 전체 POST API | `test_all_endpoints_return_422_for_invalid_payloads` | 각 API가 잘못된 payload를 `422`로 거절하는지 확인 |
+| 전체 POST API | `test_all_endpoints_return_processing_error_for_runtime_failures` | 내부 AI 처리 예외가 `500`과 `AI_PROCESSING_FAILED` JSON으로 매핑되는지 확인 |
+
 최근 검증 결과:
 
 ```text
