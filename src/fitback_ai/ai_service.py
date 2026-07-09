@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
+from uuid import UUID
 
 from .api_models import (
     ConsultationAnalyzeRequest,
@@ -172,8 +173,6 @@ def _temperature_for_status(status: str, reason: str) -> str:
     return "COLD"
 
 
-def _date_from_uuid(value) -> object:
+def _date_from_uuid(value: UUID) -> date:
     day_offset = int(value.hex[-2:], 16) % 7
-    from datetime import date
-
     return date.today() + timedelta(days=day_offset)

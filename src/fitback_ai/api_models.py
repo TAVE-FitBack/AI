@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -432,7 +431,3 @@ def require_optional_text(value: str | None) -> str | None:
     if value is None:
         return None
     return require_text(value)
-
-
-def dump_response(model: BaseModel) -> dict[str, Any]:
-    return model.model_dump(mode="json", by_alias=True, exclude_none=True)
