@@ -8,11 +8,14 @@ version = "0.1.0"
 description = "Fitback AI GraphRAG mock ingestion utilities"
 requires-python = ">=3.11"
 dependencies = [
+  "fastapi==0.139.0",
   "neo4j==5.28.1",
+  "uvicorn==0.38.0",
 ]
 
 [project.optional-dependencies]
 test = [
+  "httpx==0.28.1",
   "pytest==8.4.1",
 ]
 
