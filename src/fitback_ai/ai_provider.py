@@ -119,21 +119,20 @@ class HeuristicAiProvider(AiProvider):
         )
 
 
-class XaiGrokProvider(AiProvider):
+class OpenAiProvider(AiProvider):
     def __init__(self, settings: AiSettings, client: OpenAI | None = None) -> None:
-        if not settings.xai_api_key:
-            raise RuntimeError("XAI_API_KEY is required when AI_PROVIDER is xai.")
+        if not settings.api_key:
+            raise RuntimeError(f"API key is required when AI_PROVIDER is {settings.provider}.")
         self.settings = settings
         self.client = client or OpenAI(
-            api_key=settings.xai_api_key,
-            base_url=settings.xai_base_url,
+            api_key=settings.api_key,
+            base_url=settings.base_url,
             timeout=settings.timeout_seconds,
         )
 
     def check_inquiry_preview(self, request: InquiryPreviewRequest) -> PreviewResponse:
         return self._complete(
             PreviewResponse,
-            "inquiry_preview",
             "문의 등록 전 입력 내용을 평가하고 warnings/suggestions를 한국어로 작성하세요.",
             request,
         )
@@ -141,7 +140,6 @@ class XaiGrokProvider(AiProvider):
     def check_consultation_preview(self, request: ConsultationPreviewRequest) -> PreviewResponse:
         return self._complete(
             PreviewResponse,
-            "consultation_preview",
             "상담 등록 전 입력 내용을 평가하고 warnings/suggestions를 한국어로 작성하세요.",
             request,
         )
@@ -149,7 +147,6 @@ class XaiGrokProvider(AiProvider):
     def analyze_consultation(self, request: ConsultationAnalyzeRequest) -> ConsultationAnalyzeResponse:
         return self._complete(
             ConsultationAnalyzeResponse,
-            "consultation_analysis",
             "상담 내용을 분석해 고객 인사이트, 미전환 사유, 다음 행동, 후속 연락 정보를 한국어로 작성하세요.",
             request,
         )
@@ -157,7 +154,6 @@ class XaiGrokProvider(AiProvider):
     def recommend_next_action(self, request: NextActionRequest) -> NextActionResponse:
         return self._complete(
             NextActionResponse,
-            "next_action",
             "기존 분석과 최근 상담을 바탕으로 다음 행동과 후속 연락 정보를 한국어로 작성하세요.",
             request,
         )
@@ -165,7 +161,6 @@ class XaiGrokProvider(AiProvider):
     def generate_message(self, request: MessageGenerateRequest) -> MessageGenerateResponse:
         return self._complete(
             MessageGenerateResponse,
-            "message_generation",
             "고객에게 보낼 자연스러운 한국어 메시지를 작성하고 요청된 tonePreset/versionType을 그대로 유지하세요.",
             request,
         )
@@ -173,14 +168,12 @@ class XaiGrokProvider(AiProvider):
     def _complete(
         self,
         response_model: type[ResponseModel],
-        schema_name: str,
         task: str,
         request: BaseModel,
     ) -> ResponseModel:
-        schema = response_model.model_json_schema(by_alias=True)
         try:
-            completion = self.client.chat.completions.create(
-                model=self.settings.xai_model,
+            completion = self.client.chat.completions.parse(
+                model=self.settings.model,
                 messages=[
                     {
                         "role": "system",
@@ -201,29 +194,25 @@ class XaiGrokProvider(AiProvider):
                         ),
                     },
                 ],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema_name,
-                        "schema": schema,
-                        "strict": True,
-                    },
-                },
+                response_format=response_model,
             )
-            content = completion.choices[0].message.content
-            if not content:
-                raise RuntimeError("Grok returned an empty response.")
-            return response_model.model_validate_json(content)
+            parsed = completion.choices[0].message.parsed
+            if parsed is None:
+                content = completion.choices[0].message.content
+                if not content:
+                    raise RuntimeError("OpenAI returned an empty response.")
+                return response_model.model_validate_json(content)
+            return parsed
         except (OpenAIError, json.JSONDecodeError, ValueError, IndexError, AttributeError) as exc:
-            raise RuntimeError("Grok AI processing failed") from exc
+            raise RuntimeError("OpenAI AI processing failed") from exc
 
 
 def get_ai_provider() -> AiProvider:
     settings = load_ai_settings()
     if settings.provider == "heuristic":
         return HeuristicAiProvider()
-    if settings.provider == "xai":
-        return XaiGrokProvider(settings)
+    if settings.provider == "openai":
+        return OpenAiProvider(settings)
     raise RuntimeError(f"Unsupported AI_PROVIDER: {settings.provider}")
 
 

@@ -20,9 +20,9 @@ class Settings:
 @dataclass(frozen=True)
 class AiSettings:
     provider: str
-    xai_api_key: str | None
-    xai_model: str
-    xai_base_url: str
+    api_key: str | None
+    model: str
+    base_url: str
     timeout_seconds: float
 
 
@@ -34,7 +34,12 @@ def load_dotenv(path: Path = Path(".env")) -> None:
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         name, value = stripped.split("=", 1)
-        os.environ.setdefault(name.strip(), value.strip().strip('"').strip("'"))
+        name = name.strip()
+        value = value.strip().strip('"').strip("'")
+        duplicate_prefix = f"{name}="
+        if value.startswith(duplicate_prefix):
+            value = value.removeprefix(duplicate_prefix).strip().strip('"').strip("'")
+        os.environ.setdefault(name, value)
 
 
 def load_settings() -> Settings:
@@ -53,17 +58,30 @@ def load_settings() -> Settings:
 
 def load_ai_settings() -> AiSettings:
     load_dotenv()
-    api_key = os.getenv("XAI_API_KEY", "").strip() or os.getenv("AI_API_KEY", "").strip() or None
-    provider = os.getenv("AI_PROVIDER", "auto").strip().lower()
+    api_key = _env("OPENAI_API_KEY") or _env("AI_API_KEY") or None
+    provider = _env("AI_PROVIDER", "auto").lower()
     if provider == "auto":
-        provider = "xai" if api_key else "heuristic"
+        provider = "openai" if api_key else "heuristic"
+    model = _env("OPENAI_MODEL", _env("AI_MODEL", "gpt-4.1-mini"))
+    base_url = os.getenv(
+        "OPENAI_BASE_URL",
+        os.getenv("AI_BASE_URL", "https://api.openai.com/v1"),
+    ).strip()
     return AiSettings(
         provider=provider,
-        xai_api_key=api_key,
-        xai_model=os.getenv("XAI_MODEL", "grok-4.5").strip() or "grok-4.5",
-        xai_base_url=os.getenv("XAI_BASE_URL", "https://api.x.ai/v1").strip() or "https://api.x.ai/v1",
+        api_key=api_key,
+        model=model or "gpt-4.1-mini",
+        base_url=base_url or "https://api.openai.com/v1",
         timeout_seconds=float(os.getenv("AI_TIMEOUT_SECONDS", "25")),
     )
+
+
+def _env(name: str, default: str = "") -> str:
+    value = os.getenv(name, default).strip()
+    duplicate_prefix = f"{name}="
+    if value.startswith(duplicate_prefix):
+        return value.removeprefix(duplicate_prefix).strip().strip('"').strip("'")
+    return value
 
 
 def _required(name: str) -> str:

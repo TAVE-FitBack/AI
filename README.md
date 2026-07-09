@@ -7,7 +7,7 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 - Spring Boot 서버가 호출할 수 있는 FastAPI AI HTTP 계약 구현
 - 결정적 mock 매장 관리 데이터 생성, Neo4j AuraDB 적재, 그래프 카운트 검증
 
-현재 FastAPI 응답은 `XAI_API_KEY` 또는 `AI_API_KEY`가 설정되어 있으면 Grok/xAI API를 호출하고, 키가 없으면 로컬 개발용 결정적 휴리스틱으로 생성됩니다.
+현재 FastAPI 응답은 `OPENAI_API_KEY` 또는 `AI_API_KEY`가 설정되어 있으면 OpenAI API를 호출하고, 키가 없으면 로컬 개발용 결정적 휴리스틱으로 생성됩니다.
 
 ## 먼저 확인할 것
 
@@ -34,6 +34,7 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 │   └── fitback_ai/
 │       ├── api.py
 │       ├── api_models.py
+│       ├── ai_provider.py
 │       ├── ai_service.py
 │       ├── cli.py
 │       ├── config.py
@@ -48,7 +49,8 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 
 - `src/fitback_ai/api.py`: FastAPI 앱과 라우트 선언
 - `src/fitback_ai/api_models.py`: Pydantic 요청/응답 모델, camelCase alias, enum/date/UUID 검증
-- `src/fitback_ai/ai_service.py`: 결정적 AI 계약 응답 생성 로직
+- `src/fitback_ai/ai_service.py`: FastAPI route에서 AI provider를 호출하는 facade
+- `src/fitback_ai/ai_provider.py`: OpenAI API provider와 로컬 휴리스틱 provider
 - `tests/test_api.py`: FastAPI 계약 테스트
 - `src/fitback_ai/mock_data.py`: 상담/매장 관리 도메인에 맞춘 결정적 mock 데이터 생성기
 - `src/fitback_ai/neo4j_loader.py`: Neo4j schema 설정, batch 교체, graph upsert, count 검증
@@ -76,17 +78,17 @@ python -m venv .venv
 
 ## FastAPI 서비스
 
-Grok/xAI 연동 환경 변수:
+OpenAI 연동 환경 변수:
 
 ```env
 AI_PROVIDER=auto
-XAI_API_KEY=your-xai-api-key
-XAI_MODEL=grok-4.5
-XAI_BASE_URL=https://api.x.ai/v1
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
 AI_TIMEOUT_SECONDS=25
 ```
 
-`AI_PROVIDER=auto`에서는 `XAI_API_KEY` 또는 호환 alias인 `AI_API_KEY`가 있으면 Grok을 사용하고, 키가 없으면 로컬 휴리스틱을 사용합니다. 운영에서는 `XAI_API_KEY`를 권장합니다.
+`AI_PROVIDER=auto`에서는 `OPENAI_API_KEY` 또는 호환 alias인 `AI_API_KEY`가 있으면 OpenAI API를 사용하고, 키가 없으면 로컬 휴리스틱을 사용합니다. 운영에서는 `OPENAI_API_KEY`를 권장합니다.
 
 로컬 AI 서버 실행:
 
@@ -195,7 +197,7 @@ Invoke-RestMethod -Method Post `
 
 ## 예상 상황별 입력/출력 예시
 
-Spring 또는 프론트에서 받은 자연어 질문/상황을 FastAPI 요청 body로 정리해 보내면, AI provider는 아래처럼 계약된 JSON object를 반환합니다. Grok/xAI를 사용하는 운영 환경에서는 AI가 같은 응답 schema에 맞춰 생성하고, 로컬 휴리스틱 모드에서는 테스트 가능한 결정적 예시 응답을 반환합니다.
+Spring 또는 프론트에서 받은 자연어 질문/상황을 FastAPI 요청 body로 정리해 보내면, AI provider는 아래처럼 계약된 JSON object를 반환합니다. 아래 `AI 출력` 값은 `2026-07-09`에 `OPENAI_API_KEY`, `AI_PROVIDER=auto`, `OPENAI_MODEL=gpt-4.1-mini` 설정으로 실제 FastAPI endpoint를 호출해 받은 OpenAI API 응답입니다.
 
 ### 1. 문의 내용 중간 평가
 
@@ -224,10 +226,14 @@ AI 출력:
 
 ```json
 {
-  "isValid": true,
-  "warnings": [],
+  "isValid": false,
+  "warnings": [
+    "문의 내용에 이해하기 어려운 문자가 포함되어 있습니다.",
+    "서비스 이름에 공백 또는 인식 불가 문자가 포함되어 있습니다."
+  ],
   "suggestions": [
-    "퍼스널 트레이닝 상담 목적과 방문 가능 시간을 확인해 주세요."
+    "문의 내용을 명확하고 구체적으로 작성해주세요.",
+    "서비스 이름을 정확하게 입력해주세요."
   ]
 }
 ```
@@ -258,10 +264,12 @@ AI 출력:
 
 ```json
 {
-  "isValid": true,
-  "warnings": [],
+  "isValid": false,
+  "warnings": [
+    "입력 내용에 이해할 수 없는 문자가 포함되어 있습니다."
+  ],
   "suggestions": [
-    "퍼스널 트레이닝 상담 목적과 방문 가능 시간을 확인해 주세요."
+    "입력 내용을 다시 확인하고 정확한 문장으로 작성해 주세요."
   ]
 }
 ```
@@ -316,36 +324,36 @@ AI 출력:
 
 ```json
 {
-  "summary": "홍길동 고객은 퍼스널 트레이닝 상담에서 PRICE 관련 보류 신호를 보였습니다.",
+  "summary": "고객은 3개월 1:1 퍼스널 트레이닝 서비스에 관심을 보였으나, 상세 정보 부족으로 구매 결정에 이르지 못함.",
   "customerInsight": {
-    "leadTemperature": "WARM",
-    "temperatureBasis": "퍼스널 트레이닝 상담 내용과 PRICE 신호를 함께 고려했습니다.",
-    "priorityScore": 80
+    "leadTemperature": "미온적",
+    "temperatureBasis": "초기 상담에서 서비스를 충분히 이해하지 못함",
+    "priorityScore": 3
   },
   "nonConversionReasons": [
     {
-      "reasonType": "PRICE",
-      "role": "PRIMARY",
-      "reasonBasis": "체중 감량이 목표이고 가격을 고민 중입니다.",
-      "confidence": "HIGH"
+      "reasonType": "정보부족",
+      "role": "고객",
+      "reasonBasis": "서비스에 대한 구체적인 설명이 부족하여 신뢰도와 이해도가 낮음",
+      "confidence": "높음"
     }
   ],
   "nextBestAction": {
-    "title": "예산에 맞는 상품 안내",
-    "description": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
+    "title": "서비스 상세 안내 및 추가 상담 제안",
+    "description": "고객이 서비스를 충분히 이해할 수 있도록 상세한 안내 자료 제공 및 추가 상담 일정을 잡아 구매 전환 유도"
   },
   "followUp": {
     "recommendContactDate": "2026-07-12",
-    "memo": "KAKAO로 예산에 맞는 상품 안내 내용을 안내"
+    "memo": "카카오톡을 통한 상세 서비스 설명 메시지 발송 후 추가 상담 일정 조율 권장"
   },
   "followUpInsight": {
     "persuasionPoint": {
-      "keyMessage": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
+      "keyMessage": "3개월 동안 1:1 맞춤 트레이닝으로 체계적인 관리가 가능합니다."
     },
-    "cautionNote": "PRICE 이슈를 압박하지 말고 선택지를 제안합니다.",
+    "cautionNote": "초기 상담에서 서비스 이해도가 낮아 이탈 가능성이 있으니 빠른 후속 조치 필요",
     "actionBasis": {
-      "title": "예산에 맞는 상품 안내",
-      "description": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
+      "title": "추가 상담 권유",
+      "description": "고객이 서비스의 이점을 명확히 이해하게 하여 구매 결정에 도움"
     }
   }
 }
@@ -390,23 +398,23 @@ AI 출력:
 
 ```json
 {
-  "priorityScore": 80,
+  "priorityScore": 85,
   "nextBestAction": {
-    "title": "예산에 맞는 상품 안내",
-    "description": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
+    "title": "가격 할인 프로모션 안내",
+    "description": "고객님께 현재 진행 중인 가격 할인 및 혜택을 자세히 안내하여 구매 결정을 유도하세요."
   },
   "followUp": {
-    "recommendContactDate": "2026-07-11",
-    "memo": "예산에 맞는 상품 안내 후속 연락"
+    "recommendContactDate": "2024-06-10",
+    "memo": "최근 상담에서 가격에 대한 부담을 보이셨습니다. 할인 프로모션 정보를 제공하며 다시 연락드리겠습니다."
   },
   "followUpInsight": {
     "persuasionPoint": {
-      "keyMessage": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
+      "keyMessage": "현재 적용 가능한 가격 할인 혜택으로 부담을 줄일 수 있습니다."
     },
-    "cautionNote": "PRICE 이슈를 압박하지 말고 선택지를 제안합니다.",
+    "cautionNote": "가격에 민감한 고객이므로 무리한 판매 압박은 피하세요.",
     "actionBasis": {
-      "title": "예산에 맞는 상품 안내",
-      "description": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
+      "title": "가격 관련 우려 해소",
+      "description": "가격 부담이 주요 비구매 사유이므로 가격 할인 혜택 안내가 필요합니다."
     }
   }
 }
@@ -462,7 +470,7 @@ AI 출력:
 
 ```json
 {
-  "content": "홍길동님, 상담 때 말씀해주신 부분을 바탕으로 예산에 맞는 상품 안내를 드립니다. 예산별 상품을 제안합니다. PRICE 부담을 줄일 수 있게 선택지를 정리했습니다. 첫 문장에 고객 이름을 넣어 주세요.",
+  "content": "안녕하세요! 최근에 상담해주셔서 감사합니다. 가격 때문에 고민이 많으신 걸로 알고 있는데, 저희가 더 좋은 혜택이나 맞춤 제안을 드릴 수 있도록 노력하겠습니다. 궁금한 점 있으시면 언제든지 편하게 문의해 주세요. 항상 고객님께 최선을 다하는 Fitback이 되겠습니다!",
   "versionType": "STANDARD",
   "tonePreset": "FRIENDLY"
 }
@@ -491,7 +499,7 @@ API 테스트 범위:
 - 정상 성공 응답 확인
 - validation 실패 시 `422` 확인
 - 내부 처리 오류 시 `code: AI_PROCESSING_FAILED` JSON 확인
-- Grok/xAI provider가 `https://api.x.ai/v1`, `grok-4.5`, `response_format: json_schema`로 구조화 응답을 요청하는지 fake client로 확인
+- OpenAI provider가 `gpt-4.1-mini`와 Pydantic response format으로 구조화 응답을 요청하는지 fake client로 확인
 
 API별 호출 테스트:
 
@@ -515,10 +523,10 @@ python -m compileall -q src tests
 PASS
 
 python -m pytest -q
-14 passed, 1 warning
+15 passed, 1 warning
 ```
 
-참고: 실제 Grok API 호출은 비용이 발생할 수 있어 자동 테스트에서 실행하지 않습니다. 운영 키 검증은 로컬에서 `AI_PROVIDER=xai`와 `XAI_API_KEY`를 설정한 뒤 FastAPI endpoint를 직접 호출해 확인합니다.
+참고: 실제 OpenAI API 호출은 비용이 발생할 수 있어 자동 테스트에서 실행하지 않습니다. 운영 키 검증은 로컬에서 `AI_PROVIDER=openai`와 `OPENAI_API_KEY`를 설정한 뒤 FastAPI endpoint를 직접 호출해 확인합니다.
 
 ## Neo4j Mock Graph 명령
 
@@ -666,7 +674,7 @@ DETACH DELETE n
 2. 설정 형식 확인에는 `.env.example`을 사용합니다.
 3. 스프레드시트와 무시된 로컬 샘플은 untracked 상태로 둡니다.
 4. HTTP 계약 형태 변경은 우선 `api_models.py`를 수정합니다.
-5. 결정적 응답 동작 변경은 우선 `ai_service.py`를 수정합니다.
+5. AI provider 동작 변경은 우선 `ai_provider.py`, route 연결 변경은 `ai_service.py`를 수정합니다.
 6. 샘플 도메인 변경은 `mock_data.py`, graph write 변경은 `neo4j_loader.py`를 우선 수정합니다.
 7. graph idempotency를 보존합니다. loader는 선택된 `mockBatchId` 노드만 삭제한 뒤 batch를 재생성합니다.
 8. tenant boundary를 보존합니다. mock business node에는 `storeId`를 유지합니다.
@@ -675,7 +683,7 @@ DETACH DELETE n
 
 ## 현재 제한 사항
 
-- Grok/xAI 연동은 구현되어 있지만 실제 운영 품질은 Spring 개발 환경에서 추가 통합 테스트가 필요합니다.
+- OpenAI 연동은 구현되어 있지만 실제 운영 품질은 Spring 개발 환경에서 추가 통합 테스트가 필요합니다.
 - `AI_PROVIDER=heuristic` 또는 API key가 없는 `auto` 모드는 실제 LLM 출력이 아니라 결정적 휴리스틱입니다.
 - embedding/vector index는 아직 생성하지 않습니다.
 - Spring 개발 환경에서 `AI_BASE_URL`로 실제 통합 테스트를 추가로 수행해야 합니다.

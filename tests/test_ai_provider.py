@@ -3,27 +3,38 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from fitback_ai.ai_provider import XaiGrokProvider
+from fitback_ai.ai_provider import OpenAiProvider
 from fitback_ai.config import AiSettings, load_ai_settings
 from tests.test_api import analysis_payload
 
 
-def test_load_ai_settings_uses_xai_key_alias(monkeypatch):
+def test_load_ai_settings_uses_openai_key(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "auto")
-    monkeypatch.setenv("XAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("AI_API_KEY", raising=False)
-    monkeypatch.setenv("XAI_MODEL", "grok-4.5")
-    monkeypatch.setenv("XAI_BASE_URL", "https://api.x.ai/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4.1-mini")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
     settings = load_ai_settings()
 
-    assert settings.provider == "xai"
-    assert settings.xai_api_key == "test-key"
-    assert settings.xai_model == "grok-4.5"
-    assert settings.xai_base_url == "https://api.x.ai/v1"
+    assert settings.provider == "openai"
+    assert settings.api_key == "test-key"
+    assert settings.model == "gpt-4.1-mini"
+    assert settings.base_url == "https://api.openai.com/v1"
 
 
-def test_xai_provider_requests_structured_output():
+def test_load_ai_settings_strips_duplicate_env_name(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "auto")
+    monkeypatch.setenv("OPENAI_API_KEY", "OPENAI_API_KEY=test-key")
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+
+    settings = load_ai_settings()
+
+    assert settings.provider == "openai"
+    assert settings.api_key == "test-key"
+
+
+def test_openai_provider_requests_structured_output():
     response_payload = {
         "summary": "가격 부담이 있는 PT 상담입니다.",
         "customerInsight": {
@@ -57,12 +68,12 @@ def test_xai_provider_requests_structured_output():
         },
     }
     fake_client = FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False))
-    provider = XaiGrokProvider(
+    provider = OpenAiProvider(
         AiSettings(
-            provider="xai",
-            xai_api_key="test-key",
-            xai_model="grok-4.5",
-            xai_base_url="https://api.x.ai/v1",
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
             timeout_seconds=25,
         ),
         client=fake_client,
@@ -72,10 +83,8 @@ def test_xai_provider_requests_structured_output():
 
     assert result.summary == response_payload["summary"]
     call = fake_client.calls[0]
-    assert call["model"] == "grok-4.5"
-    assert call["response_format"]["type"] == "json_schema"
-    assert call["response_format"]["json_schema"]["strict"] is True
-    assert call["response_format"]["json_schema"]["schema"]["properties"]["summary"]
+    assert call["model"] == "gpt-4.1-mini"
+    assert call["response_format"].__name__ == "ConsultationAnalyzeResponse"
 
 
 def provider_request():
@@ -87,15 +96,19 @@ def provider_request():
 class FakeOpenAIClient:
     def __init__(self, content: str) -> None:
         self.calls = []
-        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+        self.chat = SimpleNamespace(completions=SimpleNamespace(parse=self.parse))
         self.content = content
 
-    def create(self, **kwargs):
+    def parse(self, **kwargs):
         self.calls.append(kwargs)
+        response_format = kwargs["response_format"]
         return SimpleNamespace(
             choices=[
                 SimpleNamespace(
-                    message=SimpleNamespace(content=self.content),
+                    message=SimpleNamespace(
+                        content=self.content,
+                        parsed=response_format.model_validate_json(self.content),
+                    ),
                 )
             ]
         )
