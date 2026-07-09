@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+import fitback_ai.api as api_module
 from fitback_ai.api import app
 
 
@@ -19,6 +20,13 @@ def test_openapi_exposes_required_paths():
         "/ai/v1/messages/generate",
     ]:
         assert "post" in schema["paths"][path]
+
+
+def test_docs_endpoint_is_available():
+    response = client.get("/docs")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
 
 
 def test_inquiry_preview_accepts_camel_case_and_returns_json_object():
@@ -44,21 +52,22 @@ def test_inquiry_preview_accepts_camel_case_and_returns_json_object():
     assert "raw_text" not in body
 
 
-def test_consultation_preview_rejects_invalid_enum():
+def test_consultation_preview_accepts_camel_case_and_returns_json_object():
     response = client.post(
         "/ai/v1/consultations/check-preview",
         json={
-            "rawText": "체중 감량 상담입니다.",
-            "serviceName": "PT",
+            "rawText": "체중 감량을 목표로 평일 저녁 운동 가능 여부를 상담했습니다.",
+            "serviceName": "퍼스널 트레이닝",
             "customerInfo": {
                 "name": "홍길동",
-                "gender": "UNKNOWN",
+                "gender": "MALE",
                 "birthDate": "1995-04-12",
             },
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert response.json()["isValid"] is True
 
 
 def test_consultation_analyze_returns_required_fields():
@@ -164,6 +173,174 @@ def test_message_generate_returns_requested_enums():
     assert body["content"].strip()
     assert body["versionType"] == "STANDARD"
     assert body["tonePreset"] == "FRIENDLY"
+
+
+def test_all_endpoints_return_422_for_invalid_payloads():
+    cases = [
+        (
+            "/ai/v1/inquiries/check-preview",
+            {
+                **inquiry_preview_payload(),
+                "inquiryStatus": "INVALID",
+            },
+        ),
+        (
+            "/ai/v1/consultations/check-preview",
+            {
+                **consultation_preview_payload(),
+                "customerInfo": {
+                    "name": "홍길동",
+                    "gender": "UNKNOWN",
+                    "birthDate": "1995-04-12",
+                },
+            },
+        ),
+        (
+            "/ai/v1/consultations/analyze",
+            {
+                **analysis_payload(),
+                "consultation": {
+                    **analysis_payload()["consultation"],
+                    "consultedAt": "2026-07-09 14:30:00",
+                },
+            },
+        ),
+        (
+            "/ai/v1/consultations/next-action",
+            {
+                **next_action_payload(),
+                "customer": {
+                    "customerId": "not-a-uuid",
+                    "status": "PENDING",
+                },
+            },
+        ),
+        (
+            "/ai/v1/messages/generate",
+            {
+                **message_payload(),
+                "messageOptions": {
+                    "tonePreset": "LOUD",
+                    "versionType": "STANDARD",
+                },
+            },
+        ),
+    ]
+
+    for path, payload in cases:
+        response = client.post(path, json=payload)
+        assert response.status_code == 422, path
+
+
+def test_all_endpoints_return_processing_error_for_runtime_failures(monkeypatch):
+    def fail(_):
+        raise RuntimeError("AI processing failed")
+
+    cases = [
+        ("/ai/v1/inquiries/check-preview", "check_inquiry_preview", inquiry_preview_payload()),
+        ("/ai/v1/consultations/check-preview", "check_consultation_preview", consultation_preview_payload()),
+        ("/ai/v1/consultations/analyze", "analyze_consultation", analysis_payload()),
+        ("/ai/v1/consultations/next-action", "recommend_next_action", next_action_payload()),
+        ("/ai/v1/messages/generate", "generate_message", message_payload()),
+    ]
+
+    for path, function_name, payload in cases:
+        monkeypatch.setattr(api_module, function_name, fail)
+        response = client.post(path, json=payload)
+        assert response.status_code == 500, path
+        assert response.json() == {
+            "detail": "AI processing failed",
+            "code": "AI_PROCESSING_FAILED",
+        }
+
+
+def inquiry_preview_payload():
+    return {
+        "rawText": "가격과 주 3회 PT 가능 여부를 문의했습니다.",
+        "serviceName": "퍼스널 트레이닝",
+        "inquiryStatus": "RECEIVED",
+        "customerInfo": {
+            "name": "홍길동",
+            "gender": "MALE",
+            "birthDate": "1995-04-12",
+        },
+    }
+
+
+def consultation_preview_payload():
+    return {
+        "rawText": "체중 감량을 목표로 평일 저녁 운동 가능 여부를 상담했습니다.",
+        "serviceName": "퍼스널 트레이닝",
+        "customerInfo": {
+            "name": "홍길동",
+            "gender": "MALE",
+            "birthDate": "1995-04-12",
+        },
+    }
+
+
+def next_action_payload():
+    return {
+        "customer": {
+            "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+            "status": "PENDING",
+        },
+        "latestConsultation": {
+            "consultationId": "6570aa21-d458-4885-9e69-d984fea51830",
+            "summary": "가격 부담으로 보류",
+            "rawText": "가격이 부담되어 고민 중입니다.",
+        },
+        "aiAnalysis": {
+            "leadTemperature": "WARM",
+            "temperatureBasis": "운동 의사는 명확하지만 가격 고민이 있습니다.",
+            "nonConversionReasons": [
+                {
+                    "reasonType": "PRICE",
+                    "role": "PRIMARY",
+                    "reasonBasis": "가격 부담",
+                }
+            ],
+        },
+    }
+
+
+def message_payload():
+    return {
+        "customer": {
+            "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+            "name": "홍길동",
+            "preferredContactChannel": "KAKAO",
+            "status": "PENDING",
+        },
+        "latestConsultation": {
+            "consultationId": "6570aa21-d458-4885-9e69-d984fea51830",
+            "summary": "가격 부담으로 보류",
+        },
+        "aiInsight": {"leadTemperature": "WARM", "priorityScore": 75},
+        "nonConversionReasons": [
+            {
+                "reasonType": "PRICE",
+                "role": "PRIMARY",
+                "reasonBasis": "가격 부담",
+            }
+        ],
+        "nextBestAction": {
+            "title": "예산에 맞는 상품 안내",
+            "description": "예산별 상품을 제안합니다.",
+            "persuasionPoint": {"keyMessage": "목표에 맞춘 단계별 상품"},
+            "cautionNote": "가격 압박은 피합니다.",
+            "actionBasis": {
+                "title": "예산에 맞는 상품 안내",
+                "description": "가격 이슈",
+            },
+        },
+        "event": None,
+        "messageOptions": {
+            "tonePreset": "FRIENDLY",
+            "versionType": "STANDARD",
+            "additionalInstruction": "첫 문장에 고객 이름을 넣어 주세요.",
+        },
+    }
 
 
 def analysis_payload():
