@@ -22,16 +22,6 @@ class ApiModel(BaseModel):
     )
 
 
-class FlexibleApiModel(ApiModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        serialize_by_alias=True,
-        use_enum_values=True,
-        extra="ignore",
-    )
-
-
 class Gender(StrEnum):
     MALE = "MALE"
     FEMALE = "FEMALE"
@@ -353,7 +343,7 @@ class MessageAiInsight(ApiModel):
         return require_optional_text(value)
 
 
-class MessageAction(FlexibleApiModel):
+class MessageAction(ApiModel):
     title: str = Field(min_length=1)
     description: str = Field(min_length=1)
     persuasion_point: PersuasionPoint | None = None
