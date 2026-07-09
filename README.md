@@ -1,24 +1,24 @@
 # Fitback AI
 
-Fitback AI is the FastAPI AI-contract and Neo4j graph-projection workspace for Fitback's store-management assistant.
+Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 서버와 Neo4j 그래프 프로젝션 작업 공간입니다.
 
-The repository currently provides two local capabilities:
+현재 이 저장소는 두 가지 기능을 제공합니다.
 
-- A FastAPI service that matches the Spring Boot AI integration contract in `docs/fastapi요구사항.md`.
-- Deterministic mock store-management data generation, Neo4j AuraDB loading, and graph-count verification.
+- Spring Boot 서버가 호출할 수 있는 FastAPI AI HTTP 계약 구현
+- 결정적 mock 매장 관리 데이터 생성, Neo4j AuraDB 적재, 그래프 카운트 검증
 
-The FastAPI service uses deterministic heuristics today. It does not call an external LLM provider yet.
+현재 FastAPI 응답은 외부 LLM을 호출하지 않고 결정적 휴리스틱으로 생성됩니다.
 
-## Read This First
+## 먼저 확인할 것
 
-- Source-of-truth business data should live in the main RDS-backed backend.
-- AuraDB is a graph projection for AI search, relationship traversal, event targeting, and recommendation evidence.
-- `.env` contains real AuraDB credentials and must never be committed or printed.
-- `.env.example` is the safe reference for required environment keys.
-- Spreadsheet samples such as `*상담메모_예시.xlsx` and other `.xlsx` files are intentionally ignored by Git.
-- All mock graph nodes include `storeId` and `mockBatchId` so test data can be counted or replaced safely.
+- 실제 업무 데이터의 원천은 RDS 기반 메인 백엔드입니다.
+- AuraDB는 AI 검색, 관계 탐색, 이벤트 타겟팅, 추천 근거 생성을 위한 그래프 프로젝션입니다.
+- `.env`에는 실제 AuraDB 인증 정보가 들어가므로 커밋하거나 출력하지 않습니다.
+- `.env.example`은 필요한 환경 변수 형식을 보여주는 안전한 참고 파일입니다.
+- `*상담메모_예시.xlsx` 같은 샘플 스프레드시트와 `.xlsx` 파일은 Git에서 제외합니다.
+- 모든 mock 그래프 노드는 `storeId`와 `mockBatchId`를 포함해 테스트 데이터를 안전하게 집계하거나 교체할 수 있습니다.
 
-## Repository Map
+## 저장소 구조
 
 ```text
 .
@@ -44,19 +44,19 @@ The FastAPI service uses deterministic heuristics today. It does not call an ext
     └── test_mock_data.py
 ```
 
-Key files:
+주요 파일:
 
-- `src/fitback_ai/api.py`: FastAPI app and route declarations.
-- `src/fitback_ai/api_models.py`: Pydantic request/response models, camelCase aliases, enum/date/UUID validation.
-- `src/fitback_ai/ai_service.py`: deterministic AI-contract response generation.
-- `tests/test_api.py`: FastAPI contract tests for paths, OpenAPI docs, success responses, validation failures, and internal error bodies.
-- `src/fitback_ai/mock_data.py`: deterministic mock data generator aligned with the consultation and store-management domain.
-- `src/fitback_ai/neo4j_loader.py`: Neo4j schema setup, batch replacement, graph upsert, and count verification.
-- `src/fitback_ai/cli.py`: `generate`, `load`, `verify`, and `smoke` commands.
-- `sql.example`: target RDS-style business schema used as the domain reference.
-- `docs/fastapi요구사항.md`: Spring-to-FastAPI HTTP API contract.
+- `src/fitback_ai/api.py`: FastAPI 앱과 라우트 선언
+- `src/fitback_ai/api_models.py`: Pydantic 요청/응답 모델, camelCase alias, enum/date/UUID 검증
+- `src/fitback_ai/ai_service.py`: 결정적 AI 계약 응답 생성 로직
+- `tests/test_api.py`: FastAPI 계약 테스트
+- `src/fitback_ai/mock_data.py`: 상담/매장 관리 도메인에 맞춘 결정적 mock 데이터 생성기
+- `src/fitback_ai/neo4j_loader.py`: Neo4j schema 설정, batch 교체, graph upsert, count 검증
+- `src/fitback_ai/cli.py`: `generate`, `load`, `verify`, `smoke` 명령
+- `sql.example`: 목표 RDS 스타일 업무 schema 참고 자료
+- `docs/fastapi요구사항.md`: Spring-to-FastAPI HTTP API 계약 문서
 
-## Setup
+## 설치
 
 PowerShell:
 
@@ -65,7 +65,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-The project currently pins:
+현재 주요 의존성:
 
 - `fastapi==0.139.0`
 - `uvicorn==0.38.0`
@@ -73,41 +73,41 @@ The project currently pins:
 - `pytest==8.4.1`
 - `httpx==0.28.1`
 
-## FastAPI Service
+## FastAPI 서비스
 
-Run the AI server locally:
+로컬 AI 서버 실행:
 
 ```powershell
 .\.venv\Scripts\python -m uvicorn fitback_ai.api:app --host 0.0.0.0 --port 8000
 ```
 
-Spring can point `AI_BASE_URL` to:
+Spring 개발 환경에서는 `AI_BASE_URL`을 다음 주소로 설정합니다.
 
 ```text
 http://localhost:8000
 ```
 
-Interactive API docs:
+API 문서:
 
 - Swagger UI: `http://localhost:8000/docs`
 - OpenAPI JSON: `http://localhost:8000/openapi.json`
 
-Implemented endpoints:
+구현된 엔드포인트:
 
-| Feature | Method | Path |
+| 기능 | Method | Path |
 |---|---|---|
-| Inquiry preview check | `POST` | `/ai/v1/inquiries/check-preview` |
-| Consultation preview check | `POST` | `/ai/v1/consultations/check-preview` |
-| Consultation AI analysis | `POST` | `/ai/v1/consultations/analyze` |
-| Next-action recommendation | `POST` | `/ai/v1/consultations/next-action` |
-| Customer message generation | `POST` | `/ai/v1/messages/generate` |
+| 문의 내용 중간 평가 | `POST` | `/ai/v1/inquiries/check-preview` |
+| 상담 내용 중간 평가 | `POST` | `/ai/v1/consultations/check-preview` |
+| 상담 AI 분석 | `POST` | `/ai/v1/consultations/analyze` |
+| 다음 행동 추천 | `POST` | `/ai/v1/consultations/next-action` |
+| 고객 메시지 생성 | `POST` | `/ai/v1/messages/generate` |
 
-Contract behavior:
+계약 동작:
 
-- Request and response JSON field names use camelCase.
-- UUID, date, offset datetime, and documented enum fields are validated by Pydantic/FastAPI.
-- Invalid request bodies return FastAPI validation errors with `422`.
-- Runtime processing errors are returned as JSON:
+- 요청/응답 JSON 필드명은 camelCase를 사용합니다.
+- UUID, 날짜, offset 포함 일시, 문서화된 enum 값은 Pydantic/FastAPI가 검증합니다.
+- 잘못된 요청 body는 FastAPI validation error와 함께 `422`를 반환합니다.
+- 처리 중 `RuntimeError`가 발생하면 다음 JSON 형식의 `500` 응답을 반환합니다.
 
 ```json
 {
@@ -116,12 +116,13 @@ Contract behavior:
 }
 ```
 
-- Successful responses are JSON objects and preserve the required non-null/non-blank response fields from `docs/fastapi요구사항.md`.
-- Empty list responses use `[]`, not `null`.
+- 성공 응답은 JSON object입니다.
+- 필수 응답 문자열은 `null`, 빈 문자열, 공백 문자열로 반환하지 않습니다.
+- 빈 목록은 `null` 대신 `[]`로 반환합니다.
 
-## FastAPI Smoke Examples
+## FastAPI 호출 예시
 
-Inquiry preview:
+문의 내용 중간 평가:
 
 ```powershell
 Invoke-RestMethod -Method Post `
@@ -139,7 +140,7 @@ Invoke-RestMethod -Method Post `
   }'
 ```
 
-Message generation:
+고객 메시지 생성:
 
 ```powershell
 Invoke-RestMethod -Method Post `
@@ -179,33 +180,33 @@ Invoke-RestMethod -Method Post `
   }'
 ```
 
-## Tests
+## 테스트
 
-Run all tests:
+전체 테스트:
 
 ```powershell
 .\.venv\Scripts\python -m pytest -q
 ```
 
-Useful quick checks:
+빠른 확인:
 
 ```powershell
 .\.venv\Scripts\python -m compileall -q src tests
 .\.venv\Scripts\python -m pytest -q tests\test_api.py
 ```
 
-The API tests cover:
+API 테스트 범위:
 
-- all five required POST paths in `/openapi.json`
-- `/docs` availability
-- camelCase request/response handling
-- valid success responses
-- validation failures with `422`
-- runtime error JSON with `code: AI_PROCESSING_FAILED`
+- `/openapi.json`에 5개 POST path가 존재하는지 확인
+- `/docs` 접근 가능 여부 확인
+- camelCase 요청/응답 처리 확인
+- 정상 성공 응답 확인
+- validation 실패 시 `422` 확인
+- 내부 처리 오류 시 `code: AI_PROCESSING_FAILED` JSON 확인
 
-## Neo4j Mock Graph Commands
+## Neo4j Mock Graph 명령
 
-Create `.env` from `.env.example` and fill in real values locally:
+`.env.example`을 참고해 `.env`를 만들고 로컬 값으로 채웁니다.
 
 ```env
 NEO4J_URI=neo4j+s://example.databases.neo4j.io
@@ -221,40 +222,40 @@ MOCK_BATCH_ID=mock-graph-rag-v1
 MOCK_RECORD_COUNT=100
 ```
 
-If a local network or security product replaces TLS certificates and `neo4j+s` fails with routing or certificate errors, use `NEO4J_TRUST_SELF_SIGNED=true` only for local development verification. The default is `false`.
+로컬 네트워크나 보안 제품이 TLS 인증서를 대체해 `neo4j+s` 연결이 실패할 때만 로컬 검증 용도로 `NEO4J_TRUST_SELF_SIGNED=true`를 사용합니다. 기본값은 `false`입니다.
 
-Generate 100 deterministic mock records without touching Neo4j:
+Neo4j에 접근하지 않고 100개 mock record 생성:
 
 ```powershell
 .\.venv\Scripts\python -m fitback_ai generate --count 100 --output .omx\mock-data.json
 ```
 
-Insert records into Neo4j/AuraDB and print timing evidence:
+Neo4j/AuraDB에 record 적재:
 
 ```powershell
 .\.venv\Scripts\python -m fitback_ai load --count 100
 ```
 
-Verify stored counts for the default mock batch:
+기본 mock batch count 검증:
 
 ```powershell
 .\.venv\Scripts\python -m fitback_ai verify
 ```
 
-Run generate + load + verify in one command:
+생성, 적재, 검증을 한 번에 실행:
 
 ```powershell
 .\.venv\Scripts\python -m fitback_ai smoke --count 100
 ```
 
-The smoke command prints:
+`smoke` 명령 출력 항목:
 
 - `loadElapsedMs`
 - `verifyElapsedMs`
-- per-label counts
+- label별 count
 - `passed`
 
-Expected successful 100-record smoke count shape:
+100개 record 기준 성공 count 예시:
 
 ```json
 {
@@ -270,9 +271,9 @@ Expected successful 100-record smoke count shape:
 }
 ```
 
-## Graph Domain Model
+## 그래프 도메인 모델
 
-The mock projection creates these Neo4j labels:
+mock projection은 다음 Neo4j label을 생성합니다.
 
 - `Store`
 - `User`
@@ -289,7 +290,7 @@ The mock projection creates these Neo4j labels:
 - `ContactResult`
 - `MockData`
 
-Important relationship patterns:
+주요 관계 패턴:
 
 ```cypher
 (:Store)-[:HAS_CUSTOMER]->(:Customer)
@@ -308,17 +309,17 @@ Important relationship patterns:
 (:Customer)-[:HAS_CONTACT_RESULT]->(:ContactResult)
 ```
 
-This structure supports manager-facing questions such as:
+이 구조는 다음 관리자 질문을 지원하기 위한 기반입니다.
 
-- Which customers need follow-up today?
-- Why is this customer high priority?
-- Which customers should receive a specific event campaign?
-- What are the common non-conversion reasons?
-- What message draft fits this customer's consultation history?
+- 오늘 후속 연락이 필요한 고객은 누구인가?
+- 이 고객의 우선순위가 높은 이유는 무엇인가?
+- 특정 이벤트 캠페인을 보낼 고객은 누구인가?
+- 주요 미전환 사유는 무엇인가?
+- 고객 상담 이력에 맞는 메시지 초안은 무엇인가?
 
-## Useful AuraDB Queries
+## 유용한 AuraDB 쿼리
 
-Find one loaded customer and connected graph paths:
+적재된 고객과 연결 그래프 확인:
 
 ```cypher
 MATCH p = (c:Customer)-[*1..3]-(n)
@@ -326,7 +327,7 @@ RETURN p
 LIMIT 50
 ```
 
-Get label counts for the mock batch:
+mock batch label별 count 확인:
 
 ```cypher
 MATCH (n:MockData {mockBatchId: 'mock-graph-rag-v1'})
@@ -334,33 +335,33 @@ RETURN labels(n) AS labels, count(*) AS count
 ORDER BY labels
 ```
 
-Delete only the mock batch:
+mock batch만 삭제:
 
 ```cypher
 MATCH (n:MockData {mockBatchId: 'mock-graph-rag-v1'})
 DETACH DELETE n
 ```
 
-## AI Agent Notes
+## AI Agent 참고 사항
 
-If you are an AI agent reading this folder:
+이 폴더를 읽는 AI agent는 다음 규칙을 지킵니다.
 
-1. Do not read, print, commit, or summarize `.env` values.
-2. Use `.env.example` to understand configuration shape.
-3. Keep spreadsheets and other ignored local samples untracked.
-4. Prefer changing `api_models.py` for HTTP contract shape changes.
-5. Prefer changing `ai_service.py` for deterministic response behavior.
-6. Prefer changing `mock_data.py` for sample-domain changes and `neo4j_loader.py` for graph-write changes.
-7. Preserve graph idempotency: the loader deletes only nodes with the selected `mockBatchId`, then recreates that batch.
-8. Preserve tenant boundaries: keep `storeId` on mock business nodes.
-9. Run `python -m pytest -q` before committing code changes.
-10. Run `python -m fitback_ai smoke --count 100` when AuraDB credentials are available.
+1. `.env` 값을 읽거나 출력하거나 커밋하거나 요약하지 않습니다.
+2. 설정 형식 확인에는 `.env.example`을 사용합니다.
+3. 스프레드시트와 무시된 로컬 샘플은 untracked 상태로 둡니다.
+4. HTTP 계약 형태 변경은 우선 `api_models.py`를 수정합니다.
+5. 결정적 응답 동작 변경은 우선 `ai_service.py`를 수정합니다.
+6. 샘플 도메인 변경은 `mock_data.py`, graph write 변경은 `neo4j_loader.py`를 우선 수정합니다.
+7. graph idempotency를 보존합니다. loader는 선택된 `mockBatchId` 노드만 삭제한 뒤 batch를 재생성합니다.
+8. tenant boundary를 보존합니다. mock business node에는 `storeId`를 유지합니다.
+9. 코드 변경 커밋 전 `python -m pytest -q`를 실행합니다.
+10. AuraDB 인증 정보가 있을 때 `python -m fitback_ai smoke --count 100`을 실행합니다.
 
-## Current Limitations
+## 현재 제한 사항
 
-- FastAPI responses are deterministic heuristics, not real LLM output.
-- OpenAI/LLM integration is not implemented yet.
-- Embeddings/vector indexes are not created yet.
-- Spring-to-FastAPI integration must still be tested from the Spring development environment with `AI_BASE_URL`.
-- Aura Agent/Bloom may need explicit Cypher tools or prompts to query the graph correctly.
-- RDS remains the intended source of truth; AuraDB is an AI projection layer.
+- FastAPI 응답은 실제 LLM 출력이 아니라 결정적 휴리스틱입니다.
+- OpenAI/LLM 연동은 아직 구현되어 있지 않습니다.
+- embedding/vector index는 아직 생성하지 않습니다.
+- Spring 개발 환경에서 `AI_BASE_URL`로 실제 통합 테스트를 추가로 수행해야 합니다.
+- Aura Agent/Bloom이 graph를 올바르게 조회하려면 별도의 Cypher tool이나 prompt가 필요할 수 있습니다.
+- RDS가 원천 데이터 저장소이며, AuraDB는 AI projection layer입니다.
