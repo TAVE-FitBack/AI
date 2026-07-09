@@ -133,14 +133,25 @@ class OpenAiProvider(AiProvider):
     def check_inquiry_preview(self, request: InquiryPreviewRequest) -> PreviewResponse:
         return self._complete(
             PreviewResponse,
-            "문의 등록 전 입력 내용을 평가하고 warnings/suggestions를 한국어로 작성하세요.",
+            (
+                "문의 등록 전 입력 내용을 평가하세요. 한국어, 숫자, 일반 문장부호는 정상 입력입니다. "
+                "request.rawText가 10자 이상이고 request.serviceName이 비어 있지 않으면 기본적으로 isValid=true입니다. "
+                "문의 내용에 서비스 관심사나 가격/일정/목표 중 하나 이상이 있으면 isValid=true로 판단하세요. "
+                "warnings는 실제 누락이나 모호함이 있을 때만 작성하고, suggestions는 다음 상담에서 확인할 보완 질문을 한국어로 작성하세요."
+            ),
             request,
         )
 
     def check_consultation_preview(self, request: ConsultationPreviewRequest) -> PreviewResponse:
         return self._complete(
             PreviewResponse,
-            "상담 등록 전 입력 내용을 평가하고 warnings/suggestions를 한국어로 작성하세요.",
+            (
+                "상담 등록 전 입력 내용을 평가하세요. 한국어, 숫자, 일반 문장부호는 정상 입력입니다. "
+                "request.rawText가 10자 이상이고 request.serviceName이 비어 있지 않으면 기본적으로 isValid=true입니다. "
+                "상담 내용에 고객 목표, 가능 시간, 가격, 서비스 관심사 중 하나 이상이 있으면 isValid=true로 판단하세요. "
+                "rawText에 이미 있는 내용을 누락됐다고 경고하지 마세요. "
+                "warnings는 실제 누락이나 모호함이 있을 때만 작성하고, suggestions는 다음 상담에서 확인할 보완 질문을 한국어로 작성하세요."
+            ),
             request,
         )
 
