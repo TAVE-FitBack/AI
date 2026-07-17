@@ -12,9 +12,6 @@ class Settings:
     neo4j_password: str
     neo4j_database: str
     neo4j_trust_self_signed: bool
-    mock_store_id: str
-    mock_batch_id: str
-    mock_record_count: int
 
 
 @dataclass(frozen=True)
@@ -50,9 +47,6 @@ def load_settings() -> Settings:
         neo4j_password=_required("NEO4J_PASSWORD"),
         neo4j_database=os.getenv("NEO4J_DATABASE", "neo4j"),
         neo4j_trust_self_signed=_bool("NEO4J_TRUST_SELF_SIGNED"),
-        mock_store_id=os.getenv("MOCK_STORE_ID", "00000000-0000-4000-8000-000000000001"),
-        mock_batch_id=os.getenv("MOCK_BATCH_ID", "mock-graph-rag-v1"),
-        mock_record_count=int(os.getenv("MOCK_RECORD_COUNT", "100")),
     )
 
 

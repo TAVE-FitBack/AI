@@ -6,7 +6,7 @@ Fitback AI는 미전환 사유, 추천 행동, 리드 온도를 하나의 경량
 ## 목적
 
 - LLM이 `reasonType`, `leadTemperature`, `confidence`를 임의 문자열로 만들지 않게 한다.
-- 휴리스틱 provider, OpenAI provider, mock data, Neo4j GraphRAG가 같은 의미 체계를 공유한다.
+- 휴리스틱 provider, OpenAI provider, 실제 서비스 데이터 적재, Neo4j GraphRAG가 같은 의미 체계를 공유한다.
 - Spring/FastAPI public API field name과 endpoint는 유지한다.
 
 ## 주요 개념
@@ -43,8 +43,8 @@ Fitback AI는 미전환 사유, 추천 행동, 리드 온도를 하나의 경량
 
 ## Neo4j 의미 그래프
 
-온톨로지 노드는 batch mock data와 별개로 유지되지만, 적재 시 Python 코드북과 동기화된다.
-현재 코드북에 없는 stale `OntologyConcept` 노드는 삭제되며, mock batch를 삭제해도 현재 온톨로지 노드는 남는다.
+온톨로지 노드는 실제 서비스 데이터와 별개로 유지되지만, 적재 시 Python 코드북과 동기화된다.
+처음 데이터가 없는 상태에서도 schema와 온톨로지 노드는 생성되며, 현재 코드북에 없는 stale `OntologyConcept` 노드는 삭제된다.
 
 ```cypher
 (:ReasonConcept)-[:BELONGS_TO]->(:ReasonCategory)
@@ -69,4 +69,4 @@ LIMIT 20;
 - `confidence`는 `LOW`, `MEDIUM`, `HIGH` 중 하나만 사용한다.
 - 명확한 사유가 없으면 `NEEDS_FOLLOW_UP`을 사용하고 사유를 단정하지 않는다.
 - OpenAI 응답이 허용되지 않은 제어 코드를 반환하면 조용히 다른 코드로 바꾸지 않고 처리 실패로 간주한다.
-- 과거 mock/legacy 값은 적재 전에 canonical code로 저장하고, 원래 값은 `originalReasonType` 또는 `originalLeadTemperature`로 보존한다.
+- 과거 legacy 값은 적재 전에 canonical code로 저장하고, 원래 값은 `originalReasonType` 또는 `originalLeadTemperature`로 보존한다.

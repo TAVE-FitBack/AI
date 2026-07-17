@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fitback-ai"
 version = "0.1.0"
-description = "Fitback AI GraphRAG mock ingestion utilities"
+description = "Fitback AI service and graph utilities"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi==0.139.0",

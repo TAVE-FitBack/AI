@@ -5,7 +5,7 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 현재 이 저장소는 두 가지 기능을 제공합니다.
 
 - Spring Boot 서버가 호출할 수 있는 FastAPI AI HTTP 계약 구현
-- 결정적 mock 매장 관리 데이터 생성, Neo4j AuraDB 적재, 그래프 카운트 검증
+- 실제 서비스 그래프 초기화, Neo4j AuraDB 적재, 그래프 카운트 검증
 
 현재 FastAPI 응답은 `OPENAI_API_KEY` 또는 `AI_API_KEY`가 설정되어 있으면 OpenAI API를 호출하고, 키가 없으면 로컬 개발용 결정적 휴리스틱으로 생성됩니다.
 
@@ -16,7 +16,7 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 - `.env`에는 실제 AuraDB 인증 정보가 들어가므로 커밋하거나 출력하지 않습니다.
 - `.env.example`은 필요한 환경 변수 형식을 보여주는 안전한 참고 파일입니다.
 - `*상담메모_예시.xlsx` 같은 샘플 스프레드시트와 `.xlsx` 파일은 Git에서 제외합니다.
-- 모든 mock 그래프 노드는 `storeId`와 `mockBatchId`를 포함해 테스트 데이터를 안전하게 집계하거나 교체할 수 있습니다.
+- 처음에는 업무 데이터가 없어도 Neo4j schema와 온톨로지 노드만 먼저 초기화할 수 있습니다.
 
 ## 저장소 구조
 
@@ -38,11 +38,12 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 │       ├── ai_service.py
 │       ├── cli.py
 │       ├── config.py
-│       ├── mock_data.py
+│       ├── ontology.py
 │       └── neo4j_loader.py
 └── tests/
     ├── test_api.py
-    └── test_mock_data.py
+    ├── test_fastapi_contract.py
+    └── test_ontology.py
 ```
 
 주요 파일:
@@ -51,10 +52,10 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 - `src/fitback_ai/api_models.py`: Pydantic 요청/응답 모델, camelCase alias, enum/date/UUID 검증
 - `src/fitback_ai/ai_service.py`: FastAPI route에서 AI provider를 호출하는 facade
 - `src/fitback_ai/ai_provider.py`: OpenAI API provider와 로컬 휴리스틱 provider
-- `tests/test_api.py`: FastAPI 계약 테스트
-- `src/fitback_ai/mock_data.py`: 상담/매장 관리 도메인에 맞춘 결정적 mock 데이터 생성기
-- `src/fitback_ai/neo4j_loader.py`: Neo4j schema 설정, batch 교체, graph upsert, count 검증
-- `src/fitback_ai/cli.py`: `generate`, `load`, `verify`, `smoke` 명령
+- `tests/test_api.py`, `tests/test_fastapi_contract.py`: FastAPI 계약 테스트
+- `src/fitback_ai/ontology.py`: AI 판단과 그래프 적재가 공유하는 온톨로지 코드북
+- `src/fitback_ai/neo4j_loader.py`: Neo4j schema 설정, ontology sync, graph upsert, count 검증
+- `src/fitback_ai/cli.py`: `init`, `load`, `verify` 명령
 - `sql.example`: 목표 RDS 스타일 업무 schema 참고 자료
 - `docs/fastapi요구사항.md`: Spring-to-FastAPI HTTP API 계약 문서
 
@@ -541,12 +542,12 @@ python -m compileall -q src tests
 PASS
 
 python -m pytest -q
-15 passed, 1 warning
+35 passed, 1 warning
 ```
 
 참고: 실제 OpenAI API 호출은 비용이 발생할 수 있어 자동 테스트에서 실행하지 않습니다. 운영 키 검증은 로컬에서 `AI_PROVIDER=openai`와 `OPENAI_API_KEY`를 설정한 뒤 FastAPI endpoint를 직접 호출해 확인합니다.
 
-## Neo4j Mock Graph 명령
+## Neo4j Production Graph 명령
 
 `.env.example`을 참고해 `.env`를 만들고 로컬 값으로 채웁니다.
 
@@ -558,64 +559,56 @@ NEO4J_DATABASE=neo4j
 NEO4J_TRUST_SELF_SIGNED=false
 AURA_INSTANCEID=optional-instance-id
 AURA_INSTANCENAME=optional-instance-name
-
-MOCK_STORE_ID=00000000-0000-4000-8000-000000000001
-MOCK_BATCH_ID=mock-graph-rag-v1
-MOCK_RECORD_COUNT=100
 ```
 
 로컬 네트워크나 보안 제품이 TLS 인증서를 대체해 `neo4j+s` 연결이 실패할 때만 로컬 검증 용도로 `NEO4J_TRUST_SELF_SIGNED=true`를 사용합니다. 기본값은 `false`입니다.
 
-Neo4j에 접근하지 않고 100개 mock record 생성:
+업무 데이터가 아직 없을 때 schema와 온톨로지만 초기화:
 
 ```powershell
-.\.venv\Scripts\python -m fitback_ai generate --count 100 --output .omx\mock-data.json
+.\.venv\Scripts\python -m fitback_ai init
 ```
 
-Neo4j/AuraDB에 record 적재:
+Spring/RDS에서 추출한 JSON payload를 Neo4j/AuraDB에 적재:
 
 ```powershell
-.\.venv\Scripts\python -m fitback_ai load --count 100
+.\.venv\Scripts\python -m fitback_ai load --input .omx\production-graph.json
 ```
 
-기본 mock batch count 검증:
+입력 파일 없이 `load`를 실행하면 `init`과 동일하게 빈 그래프를 준비합니다.
+
+```powershell
+.\.venv\Scripts\python -m fitback_ai load
+```
+
+현재 graph count 검증:
 
 ```powershell
 .\.venv\Scripts\python -m fitback_ai verify
 ```
 
-생성, 적재, 검증을 한 번에 실행:
+명령 출력 항목:
 
-```powershell
-.\.venv\Scripts\python -m fitback_ai smoke --count 100
-```
-
-`smoke` 명령 출력 항목:
-
-- `loadElapsedMs`
-- `verifyElapsedMs`
+- `elapsedMs`
+- `recordCount` (`init`, `load`)
 - label별 count
-- `passed`
 
-100개 record 기준 성공 count 예시:
+초기 빈 데이터 기준 count 예시:
 
 ```json
 {
-  "Customer": 100,
-  "Consultation": 100,
-  "FollowUp": 100,
-  "NonConversionReason": 100,
-  "ConsultationSignal": 100,
-  "CustomerAiInsight": 100,
-  "EventTarget": 100,
-  "MessageTemplate": 100,
-  "ContactResult": 100
+  "Store": 0,
+  "Customer": 0,
+  "Consultation": 0,
+  "ReasonConcept": 6,
+  "ActionConcept": 6,
+  "LeadTemperatureConcept": 3
 }
 ```
 
 ## 그래프 도메인 모델
 
-mock projection은 다음 Neo4j label을 생성합니다.
+production projection은 다음 Neo4j label을 생성합니다.
 
 - `Store`
 - `User`
@@ -630,7 +623,11 @@ mock projection은 다음 Neo4j label을 생성합니다.
 - `EventTarget`
 - `MessageTemplate`
 - `ContactResult`
-- `MockData`
+- `OntologyConcept`
+- `ReasonConcept`
+- `ReasonCategory`
+- `ActionConcept`
+- `LeadTemperatureConcept`
 
 주요 관계 패턴:
 
@@ -669,19 +666,12 @@ RETURN p
 LIMIT 50
 ```
 
-mock batch label별 count 확인:
+label별 count 확인:
 
 ```cypher
-MATCH (n:MockData {mockBatchId: 'mock-graph-rag-v1'})
+MATCH (n)
 RETURN labels(n) AS labels, count(*) AS count
 ORDER BY labels
-```
-
-mock batch만 삭제:
-
-```cypher
-MATCH (n:MockData {mockBatchId: 'mock-graph-rag-v1'})
-DETACH DELETE n
 ```
 
 ## AI Agent 참고 사항
@@ -693,11 +683,11 @@ DETACH DELETE n
 3. 스프레드시트와 무시된 로컬 샘플은 untracked 상태로 둡니다.
 4. HTTP 계약 형태 변경은 우선 `api_models.py`를 수정합니다.
 5. AI provider 동작 변경은 우선 `ai_provider.py`, route 연결 변경은 `ai_service.py`를 수정합니다.
-6. 샘플 도메인 변경은 `mock_data.py`, graph write 변경은 `neo4j_loader.py`를 우선 수정합니다.
-7. graph idempotency를 보존합니다. loader는 선택된 `mockBatchId` 노드만 삭제한 뒤 batch를 재생성합니다.
-8. tenant boundary를 보존합니다. mock business node에는 `storeId`를 유지합니다.
+6. Ontology 변경은 `ontology.py`, graph write 변경은 `neo4j_loader.py`를 우선 수정합니다.
+7. 처음 데이터가 없는 운영 환경을 지원합니다. `init`과 빈 `load`는 schema와 ontology만 준비해야 합니다.
+8. tenant boundary를 보존합니다. 실제 business node에는 `storeId`를 유지합니다.
 9. 코드 변경 커밋 전 `python -m pytest -q`를 실행합니다.
-10. AuraDB 인증 정보가 있을 때 `python -m fitback_ai smoke --count 100`을 실행합니다.
+10. AuraDB 인증 정보가 있을 때 `python -m fitback_ai init`과 `python -m fitback_ai verify`를 실행합니다.
 
 ## 현재 제한 사항
 

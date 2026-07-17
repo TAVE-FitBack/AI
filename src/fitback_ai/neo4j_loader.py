@@ -20,7 +20,6 @@ from .ontology import (
 
 @dataclass(frozen=True)
 class LoadResult:
-    batch_id: str
     record_count: int
     elapsed_ms: float
     counts: dict[str, int]
@@ -55,28 +54,31 @@ LABELS = BUSINESS_LABELS + ONTOLOGY_LABELS
 
 def load_graph(settings: Settings, payload: dict[str, Any]) -> LoadResult:
     started = perf_counter()
+    normalized_payload = _normalize_payload(payload)
     with _driver(settings) as driver:
         driver.verify_connectivity()
         with driver.session(database=settings.neo4j_database) as session:
             setup_schema(session)
             session.execute_write(_upsert_ontology)
-            session.execute_write(_delete_batch, payload["mockBatchId"])
-            session.execute_write(_upsert_payload, payload)
-            counts = session.execute_read(_counts, payload["mockBatchId"])
+            session.execute_write(_upsert_payload, normalized_payload)
+            counts = session.execute_read(_counts)
     elapsed_ms = (perf_counter() - started) * 1000
     return LoadResult(
-        batch_id=payload["mockBatchId"],
-        record_count=payload["recordCount"],
+        record_count=len(normalized_payload["consultationRows"]),
         elapsed_ms=elapsed_ms,
         counts=counts,
     )
 
 
-def verify_graph(settings: Settings, batch_id: str) -> dict[str, int]:
+def initialize_graph(settings: Settings) -> LoadResult:
+    return load_graph(settings, {})
+
+
+def verify_graph(settings: Settings) -> dict[str, int]:
     with _driver(settings) as driver:
         driver.verify_connectivity()
         with driver.session(database=settings.neo4j_database) as session:
-            return session.execute_read(_counts, batch_id)
+            return session.execute_read(_counts)
 
 
 def _driver(settings: Settings):
@@ -92,19 +94,8 @@ def _driver(settings: Settings):
 def setup_schema(session) -> None:
     for label in LABELS:
         session.run(f"CREATE CONSTRAINT {label.lower()}_id IF NOT EXISTS FOR (n:{label}) REQUIRE n.id IS UNIQUE")
-    session.run("CREATE INDEX mock_batch_id IF NOT EXISTS FOR (n:MockData) ON (n.mockBatchId)")
     session.run("CREATE TEXT INDEX consultation_rag_text IF NOT EXISTS FOR (n:Consultation) ON (n.ragText)")
     session.run("CREATE TEXT INDEX follow_up_rag_text IF NOT EXISTS FOR (n:FollowUp) ON (n.ragText)")
-
-
-def _delete_batch(tx, batch_id: str) -> None:
-    tx.run(
-        """
-        MATCH (n:MockData {mockBatchId: $batchId})
-        DETACH DELETE n
-        """,
-        batchId=batch_id,
-    )
 
 
 def _upsert_ontology(tx) -> None:
@@ -163,31 +154,35 @@ def _upsert_ontology(tx) -> None:
 
 def _upsert_payload(tx, payload: dict[str, Any]) -> None:
     rows = [_canonicalize_row(row) for row in payload["consultationRows"]]
+    if payload["store"] is None:
+        return
     tx.run(
         """
-        MERGE (store:Store:MockData {id: $store.id})
+        MERGE (store:Store {id: $store.id})
         SET store += $store
 
         WITH store
         UNWIND $users AS item
-        MERGE (user:User:MockData {id: item.id})
+        MERGE (user:User {id: item.id})
         SET user += item
         MERGE (store)-[:HAS_USER]->(user)
 
         WITH store
         UNWIND $services AS item
-        MERGE (service:Service:MockData {id: item.id})
+        MERGE (service:Service {id: item.id})
         SET service += item
         MERGE (store)-[:OFFERS]->(service)
 
         WITH store
         UNWIND $events AS item
-        MERGE (event:Event:MockData {id: item.id})
+        MERGE (event:Event {id: item.id})
         SET event += item
         MERGE (store)-[:RUNS_EVENT]->(event)
         WITH event, item
-        MATCH (service:Service {id: item.serviceId})
-        MERGE (event)-[:PROMOTES]->(service)
+        OPTIONAL MATCH (service:Service {id: item.serviceId})
+        FOREACH (_ IN CASE WHEN service IS NULL THEN [] ELSE [1] END |
+            MERGE (event)-[:PROMOTES]->(service)
+        )
         """,
         store=payload["store"],
         users=payload["users"],
@@ -202,24 +197,24 @@ def _upsert_payload(tx, payload: dict[str, Any]) -> None:
         MATCH (user:User {id: row.consultation.userId})
         MATCH (event:Event {id: row.eventTarget.eventId})
 
-        MERGE (customer:Customer:MockData {id: row.customer.id})
+        MERGE (customer:Customer {id: row.customer.id})
         SET customer += row.customer
         MERGE (store)-[:HAS_CUSTOMER]->(customer)
         MERGE (customer)-[:INTERESTED_IN]->(service)
 
-        MERGE (consultation:Consultation:MockData {id: row.consultation.id})
+        MERGE (consultation:Consultation {id: row.consultation.id})
         SET consultation += row.consultation,
             consultation.ragText = row.consultation.rawText + ' ' + coalesce(row.consultation.summary, '')
         MERGE (customer)-[:HAD_CONSULTATION]->(consultation)
         MERGE (consultation)-[:ABOUT_SERVICE]->(service)
         MERGE (consultation)-[:CONSULTED_BY]->(user)
 
-        MERGE (followUp:FollowUp:MockData {id: row.followUp.id})
+        MERGE (followUp:FollowUp {id: row.followUp.id})
         SET followUp += row.followUp,
             followUp.ragText = row.followUp.memo
         MERGE (consultation)-[:HAS_FOLLOW_UP]->(followUp)
 
-        MERGE (reason:NonConversionReason:MockData {id: row.nonConversionReason.id})
+        MERGE (reason:NonConversionReason {id: row.nonConversionReason.id})
         SET reason += row.nonConversionReason
         MERGE (customer)-[:HAS_NON_CONVERSION_REASON]->(reason)
         MERGE (consultation)-[:HAS_NON_CONVERSION_REASON]->(reason)
@@ -230,11 +225,11 @@ def _upsert_payload(tx, payload: dict[str, Any]) -> None:
              coalesce(matchedReasonConcept, fallbackReasonConcept) AS reasonConcept
         MERGE (reason)-[:INSTANCE_OF]->(reasonConcept)
 
-        MERGE (signal:ConsultationSignal:MockData {id: row.consultationSignal.id})
+        MERGE (signal:ConsultationSignal {id: row.consultationSignal.id})
         SET signal += row.consultationSignal
         MERGE (consultation)-[:HAS_SIGNAL]->(signal)
 
-        MERGE (insight:CustomerAiInsight:MockData {id: row.customerAiInsight.customerId})
+        MERGE (insight:CustomerAiInsight {id: row.customerAiInsight.customerId})
         SET insight += row.customerAiInsight
         MERGE (customer)-[:HAS_AI_INSIGHT]->(insight)
         WITH store, service, user, event, customer, consultation, followUp, reason, signal, insight, row
@@ -244,18 +239,18 @@ def _upsert_payload(tx, payload: dict[str, Any]) -> None:
              coalesce(matchedTemperatureConcept, fallbackTemperatureConcept) AS temperatureConcept
         MERGE (insight)-[:HAS_TEMPERATURE]->(temperatureConcept)
 
-        MERGE (target:EventTarget:MockData {id: row.eventTarget.id})
+        MERGE (target:EventTarget {id: row.eventTarget.id})
         SET target += row.eventTarget
         MERGE (event)-[:TARGETS]->(target)
         MERGE (target)-[:TARGET_CUSTOMER]->(customer)
 
-        MERGE (message:MessageTemplate:MockData {id: row.messageTemplate.id})
+        MERGE (message:MessageTemplate {id: row.messageTemplate.id})
         SET message += row.messageTemplate
         MERGE (customer)-[:HAS_MESSAGE]->(message)
         MERGE (followUp)-[:GENERATED_MESSAGE]->(message)
         MERGE (target)-[:HAS_MESSAGE]->(message)
 
-        MERGE (contact:ContactResult:MockData {id: row.contactResult.id})
+        MERGE (contact:ContactResult {id: row.contactResult.id})
         SET contact += row.contactResult
         MERGE (customer)-[:HAS_CONTACT_RESULT]->(contact)
         MERGE (followUp)-[:HAS_CONTACT_RESULT]->(contact)
@@ -264,26 +259,38 @@ def _upsert_payload(tx, payload: dict[str, Any]) -> None:
     )
 
 
-def _counts(tx, batch_id: str) -> dict[str, int]:
+def _counts(tx) -> dict[str, int]:
     result = {}
     for label in BUSINESS_LABELS:
-        record = tx.run(
-            f"MATCH (n:{label}:MockData {{mockBatchId: $batchId}}) RETURN count(n) AS count",
-            batchId=batch_id,
-        ).single()
+        record = tx.run(f"MATCH (n:{label}) RETURN count(n) AS count").single()
         result[label] = int(record["count"])
     for label in ONTOLOGY_LABELS:
         record = tx.run(f"MATCH (n:{label}) RETURN count(n) AS count").single()
         result[label] = int(record["count"])
     rel_record = tx.run(
         """
-        MATCH (n:MockData {mockBatchId: $batchId})-[r]-()
+        MATCH (n)-[r]-()
+        WHERE any(label IN labels(n) WHERE label IN $businessLabels)
         RETURN count(DISTINCT r) AS count
         """,
-        batchId=batch_id,
+        businessLabels=BUSINESS_LABELS,
     ).single()
     result["Relationships"] = int(rel_record["count"])
     return result
+
+
+def _normalize_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    payload = payload or {}
+    normalized = {
+        "store": payload.get("store"),
+        "users": payload.get("users", []),
+        "services": payload.get("services", []),
+        "events": payload.get("events", []),
+        "consultationRows": payload.get("consultationRows", []),
+    }
+    if normalized["store"] is None and any(normalized[key] for key in ("users", "services", "events", "consultationRows")):
+        raise ValueError("Production graph payload requires store when business data is present.")
+    return normalized
 
 
 def _canonicalize_row(row: dict[str, Any]) -> dict[str, Any]:
