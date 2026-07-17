@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from uuid import NAMESPACE_URL, uuid5
 
+from .ontology import REASON_CONCEPTS, action_for_reason
+
 
 SERVICES = [
     ("헬스", "개인 운동 루틴과 시설 이용권"),
@@ -12,7 +14,7 @@ SERVICES = [
 INFLOW_PATHS = ["워크인", "네이버예약", "전화", "지인소개", "법인제휴", "네이버톡톡", "기타"]
 GENDERS = ["남", "여"]
 CONSULTANTS = ["이시원", "장성길", "송대원", "전기제", "나현석"]
-REASONS = ["PRICE_CONCERN", "SCHEDULE_CONFLICT", "FAMILY_DISCUSSION", "NO_RESPONSE", "COMPARING_OPTIONS"]
+REASONS = list(REASON_CONCEPTS)
 SIGNALS = ["TRIAL_BOOKED", "POSITIVE_REACTION", "PRICE_SENSITIVE", "FOLLOW_UP_NEEDED", "REFERRED_BY_FRIEND"]
 
 
@@ -185,20 +187,23 @@ def stable_id(*parts: str) -> str:
 
 
 def consultation_text(idx: int, service: str, reason: str, signal: str) -> str:
+    reason_label = REASON_CONCEPTS[reason].label
     return (
         f"{service} 상담 고객입니다. {signal} 신호가 있었고 "
-        f"{reason} 이슈로 바로 등록하지 않았습니다. "
+        f"{reason_label}({reason}) 이슈로 바로 등록하지 않았습니다. "
         f"{idx + 1}번 mock 상담 메모입니다."
     )
 
 
 def summarize_text(service: str, reason: str) -> str:
-    return f"{service} 관심 고객이며 주요 보류 사유는 {reason}입니다."
+    return f"{service} 관심 고객이며 주요 보류 사유는 {REASON_CONCEPTS[reason].label}({reason})입니다."
 
 
 def follow_up_text(reason: str, service: str) -> str:
-    return f"{reason}을 고려해 {service} 체험/혜택 안내 리마인드가 필요합니다."
+    action = action_for_reason(reason)
+    return f"{REASON_CONCEPTS[reason].label} 사유를 고려해 {action.label} 후속 연락이 필요합니다."
 
 
 def message_text(service: str, reason: str) -> str:
-    return f"안녕하세요. 지난 {service} 상담 관련해 {reason} 부분을 도와드릴 수 있는 혜택을 안내드립니다."
+    action = action_for_reason(reason)
+    return f"안녕하세요. 지난 {service} 상담 관련해 {REASON_CONCEPTS[reason].label} 부분을 도와드릴 수 있도록 {action.label}을 안내드립니다."

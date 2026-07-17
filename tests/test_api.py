@@ -83,6 +83,15 @@ def test_consultation_analyze_returns_required_fields():
     body = response.json()
     assert body["summary"].strip()
     assert body["customerInsight"]["leadTemperature"].strip()
+    assert body["customerInsight"]["leadTemperature"] in {"HOT", "WARM", "COLD"}
+    assert body["nonConversionReasons"][0]["reasonType"] in {
+        "PRICE",
+        "SCHEDULE",
+        "FAMILY_DISCUSSION",
+        "NO_RESPONSE",
+        "COMPARING_OPTIONS",
+        "NEEDS_FOLLOW_UP",
+    }
     assert body["nextBestAction"]["title"].strip()
     assert body["nextBestAction"]["description"].strip()
     assert body["followUp"]["recommendContactDate"]
@@ -129,6 +138,7 @@ def test_next_action_returns_required_contract():
     assert response.status_code == 200
     body = response.json()
     assert isinstance(body["priorityScore"], int)
+    assert body["priorityScore"] == 80
     assert body["nextBestAction"]["title"].strip()
     assert body["followUp"]["recommendContactDate"]
 

@@ -26,6 +26,16 @@ from .api_models import (
     PreviewResponse,
 )
 from .config import AiSettings, load_ai_settings
+from .ontology import (
+    action_for_reason,
+    classify_reason,
+    normalize_confidence,
+    normalize_reason_code,
+    normalize_temperature_code,
+    ontology_prompt_context,
+    priority_for_reason,
+    temperature_for_status,
+)
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 
@@ -55,13 +65,13 @@ class HeuristicAiProvider(AiProvider):
         return _preview_response(request.raw_text, request.service_name)
 
     def analyze_consultation(self, request: ConsultationAnalyzeRequest) -> ConsultationAnalyzeResponse:
-        reason = _reason_from_text(request.consultation.raw_text)
+        reason = classify_reason(request.consultation.raw_text)
         action = _action_for_reason(reason, request.service.service_name)
         contact_date = request.consultation.consulted_at.date() + timedelta(days=3)
         insight = CustomerInsight(
-            lead_temperature=_temperature_for_status(str(request.store_context.registration_status), reason),
+            lead_temperature=temperature_for_status(str(request.store_context.registration_status), reason),
             temperature_basis=f"{request.service.service_name} 상담 내용과 {reason} 신호를 함께 고려했습니다.",
-            priority_score=_priority_for_reason(reason),
+            priority_score=priority_for_reason(reason),
         )
         non_conversion_reasons = [
             NonConversionReason(
@@ -89,7 +99,7 @@ class HeuristicAiProvider(AiProvider):
         action = _action_for_reason(reason, "상담 상품")
         base_date = _date_from_uuid(request.latest_consultation.consultation_id)
         return NextActionResponse(
-            priority_score=_priority_for_reason(reason),
+            priority_score=priority_for_reason(reason),
             next_best_action=action,
             follow_up=FollowUp(
                 recommend_contact_date=base_date + timedelta(days=2),
@@ -191,7 +201,8 @@ class OpenAiProvider(AiProvider):
                         "content": (
                             "당신은 Fitback 매장 관리 AI 서버입니다. "
                             "반드시 제공된 JSON Schema와 일치하는 JSON만 반환하세요. "
-                            "필수 문자열은 빈 문자열이나 공백으로 두지 마세요."
+                            "필수 문자열은 빈 문자열이나 공백으로 두지 마세요.\n"
+                            f"{ontology_prompt_context()}"
                         ),
                     },
                     {
@@ -212,8 +223,8 @@ class OpenAiProvider(AiProvider):
                 content = completion.choices[0].message.content
                 if not content:
                     raise RuntimeError("OpenAI returned an empty response.")
-                return response_model.model_validate_json(content)
-            return parsed
+                parsed = response_model.model_validate_json(content)
+            return _normalize_response(parsed)
         except (OpenAIError, json.JSONDecodeError, ValueError, IndexError, AttributeError) as exc:
             raise RuntimeError("OpenAI AI processing failed") from exc
 
@@ -238,42 +249,17 @@ def _preview_response(raw_text: str, service_name: str) -> PreviewResponse:
     return PreviewResponse(is_valid=True, warnings=warnings, suggestions=suggestions)
 
 
-def _reason_from_text(text: str) -> str:
-    lowered = text.lower()
-    if "가격" in text or "예산" in text or "price" in lowered:
-        return "PRICE"
-    if "시간" in text or "일정" in text or "schedule" in lowered:
-        return "SCHEDULE"
-    if "가족" in text or "상의" in text or "family" in lowered:
-        return "FAMILY_DISCUSSION"
-    return "NEEDS_FOLLOW_UP"
-
-
 def _first_reason_type(reasons: list[NonConversionReason]) -> str:
     if not reasons:
         return "NEEDS_FOLLOW_UP"
-    return reasons[0].reason_type
+    return normalize_reason_code(reasons[0].reason_type)
 
 
 def _action_for_reason(reason: str, service_name: str) -> NextBestAction:
-    if reason == "PRICE":
-        return NextBestAction(
-            title="예산에 맞는 상품 안내",
-            description=f"{service_name} 선택지를 예산별로 정리해 부담을 낮춥니다.",
-        )
-    if reason == "SCHEDULE":
-        return NextBestAction(
-            title="가능 시간 재확인",
-            description="고객이 방문 가능한 시간대를 확인하고 대체 일정을 제안합니다.",
-        )
-    if reason == "FAMILY_DISCUSSION":
-        return NextBestAction(
-            title="결정에 필요한 요약 전달",
-            description="가족과 상의할 수 있도록 핵심 혜택과 조건을 간단히 정리합니다.",
-        )
+    action = action_for_reason(reason)
     return NextBestAction(
-        title="상담 내용 기반 후속 연락",
-        description="상담에서 확인한 관심사와 망설임을 바탕으로 다음 연락을 진행합니다.",
+        title=action.title or action.label,
+        description=(action.action_description or action.description).format(service_name=service_name),
     )
 
 
@@ -285,24 +271,25 @@ def _follow_up_insight(action: NextBestAction, reason: str) -> FollowUpInsight:
     )
 
 
-def _priority_for_reason(reason: str) -> int:
-    if reason == "PRICE":
-        return 80
-    if reason == "SCHEDULE":
-        return 72
-    if reason == "FAMILY_DISCUSSION":
-        return 68
-    return 65
-
-
-def _temperature_for_status(status: str, reason: str) -> str:
-    if status == "REGISTERED":
-        return "HOT"
-    if reason in {"PRICE", "SCHEDULE"}:
-        return "WARM"
-    return "COLD"
-
-
 def _date_from_uuid(value: UUID) -> date:
     day_offset = int(value.hex[-2:], 16) % 7
     return date.today() + timedelta(days=day_offset)
+
+
+def _normalize_response(response: ResponseModel) -> ResponseModel:
+    if isinstance(response, ConsultationAnalyzeResponse):
+        response.customer_insight.lead_temperature = normalize_temperature_code(
+            response.customer_insight.lead_temperature,
+            allow_unknown=False,
+        )
+        response.non_conversion_reasons = _normalize_reasons(response.non_conversion_reasons)
+    elif isinstance(response, NextActionResponse):
+        response.priority_score = max(0, min(100, response.priority_score))
+    return response
+
+
+def _normalize_reasons(reasons: list[NonConversionReason]) -> list[NonConversionReason]:
+    for reason in reasons:
+        reason.reason_type = normalize_reason_code(reason.reason_type, allow_unknown=False)
+        reason.confidence = normalize_confidence(reason.confidence, allow_unknown=False)
+    return reasons

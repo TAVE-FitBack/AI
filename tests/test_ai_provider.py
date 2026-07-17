@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from fitback_ai.ai_provider import OpenAiProvider
 from fitback_ai.config import AiSettings, load_ai_settings
 from tests.test_api import analysis_payload
@@ -85,6 +87,105 @@ def test_openai_provider_requests_structured_output():
     call = fake_client.calls[0]
     assert call["model"] == "gpt-4.1-mini"
     assert call["response_format"].__name__ == "ConsultationAnalyzeResponse"
+    assert "reasonType" in call["messages"][0]["content"]
+    assert "PRICE" in call["messages"][0]["content"]
+
+
+def test_openai_provider_normalizes_legacy_reason_aliases():
+    response_payload = {
+        "summary": "상담 분석입니다.",
+        "customerInsight": {
+            "leadTemperature": "WARM",
+            "temperatureBasis": "관심이 있습니다.",
+            "priorityScore": 75,
+        },
+        "nonConversionReasons": [
+            {
+                "reasonType": "PRICE_CONCERN",
+                "role": "PRIMARY",
+                "reasonBasis": "가격을 고민 중입니다.",
+                "confidence": "HIGH",
+            }
+        ],
+        "nextBestAction": {
+            "title": "예산 맞춤 상품 안내",
+            "description": "예산별 상품 선택지를 제안합니다.",
+        },
+        "followUp": {
+            "recommendContactDate": "2026-07-12",
+            "memo": "예산별 상품 안내",
+        },
+        "followUpInsight": {
+            "persuasionPoint": {"keyMessage": "예산에 맞춘 선택지"},
+            "cautionNote": "가격 압박을 피합니다.",
+            "actionBasis": {
+                "title": "예산 맞춤 상품 안내",
+                "description": "예산별 상품 선택지를 제안합니다.",
+            },
+        },
+    }
+    provider = OpenAiProvider(
+        AiSettings(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
+            timeout_seconds=25,
+        ),
+        client=FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False)),
+    )
+
+    result = provider.analyze_consultation(provider_request())
+
+    assert result.non_conversion_reasons[0].reason_type == "PRICE"
+
+
+def test_openai_provider_rejects_unknown_controlled_ontology_fields():
+    response_payload = {
+        "summary": "상담 분석입니다.",
+        "customerInsight": {
+            "leadTemperature": "VERY_HOT",
+            "temperatureBasis": "관심이 있습니다.",
+            "priorityScore": 75,
+        },
+        "nonConversionReasons": [
+            {
+                "reasonType": "PRICE",
+                "role": "PRIMARY",
+                "reasonBasis": "가격을 고민 중입니다.",
+                "confidence": "HIGH",
+            }
+        ],
+        "nextBestAction": {
+            "title": "예산 맞춤 상품 안내",
+            "description": "예산별 상품 선택지를 제안합니다.",
+        },
+        "followUp": {
+            "recommendContactDate": "2026-07-12",
+            "memo": "예산별 상품 안내",
+        },
+        "followUpInsight": {
+            "persuasionPoint": {"keyMessage": "예산에 맞춘 선택지"},
+            "cautionNote": "가격 압박을 피합니다.",
+            "actionBasis": {
+                "title": "예산 맞춤 상품 안내",
+                "description": "예산별 상품 선택지를 제안합니다.",
+            },
+        },
+    }
+    provider = OpenAiProvider(
+        AiSettings(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
+            timeout_seconds=25,
+        ),
+        client=FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False)),
+    )
+
+    with pytest.raises(RuntimeError):
+        provider.analyze_consultation(provider_request())
 
 
 def provider_request():

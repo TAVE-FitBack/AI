@@ -8,6 +8,14 @@ from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable
 
 from .config import Settings
+from .ontology import (
+    action_rows,
+    normalize_reason_code,
+    normalize_temperature_code,
+    reason_category_rows,
+    reason_rows,
+    temperature_rows,
+)
 
 
 @dataclass(frozen=True)
@@ -18,7 +26,7 @@ class LoadResult:
     counts: dict[str, int]
 
 
-LABELS = [
+BUSINESS_LABELS = [
     "Store",
     "User",
     "Service",
@@ -34,6 +42,16 @@ LABELS = [
     "ContactResult",
 ]
 
+ONTOLOGY_LABELS = [
+    "OntologyConcept",
+    "ReasonConcept",
+    "ReasonCategory",
+    "ActionConcept",
+    "LeadTemperatureConcept",
+]
+
+LABELS = BUSINESS_LABELS + ONTOLOGY_LABELS
+
 
 def load_graph(settings: Settings, payload: dict[str, Any]) -> LoadResult:
     started = perf_counter()
@@ -41,6 +59,7 @@ def load_graph(settings: Settings, payload: dict[str, Any]) -> LoadResult:
         driver.verify_connectivity()
         with driver.session(database=settings.neo4j_database) as session:
             setup_schema(session)
+            session.execute_write(_upsert_ontology)
             session.execute_write(_delete_batch, payload["mockBatchId"])
             session.execute_write(_upsert_payload, payload)
             counts = session.execute_read(_counts, payload["mockBatchId"])
@@ -88,7 +107,62 @@ def _delete_batch(tx, batch_id: str) -> None:
     )
 
 
+def _upsert_ontology(tx) -> None:
+    current_ids = [
+        *[item["id"] for item in reason_category_rows()],
+        *[item["id"] for item in action_rows()],
+        *[item["id"] for item in temperature_rows()],
+        *[item["id"] for item in reason_rows()],
+    ]
+    tx.run(
+        """
+        MATCH (concept:OntologyConcept)
+        WHERE NOT concept.id IN $currentIds
+        DETACH DELETE concept
+        """,
+        currentIds=current_ids,
+    )
+    tx.run(
+        """
+        UNWIND $categories AS item
+        MERGE (category:ReasonCategory:OntologyConcept {id: item.id})
+        SET category += item
+        """,
+        categories=reason_category_rows(),
+    )
+    tx.run(
+        """
+        UNWIND $actions AS item
+        MERGE (action:ActionConcept:OntologyConcept {id: item.id})
+        SET action += item
+        """,
+        actions=action_rows(),
+    )
+    tx.run(
+        """
+        UNWIND $temperatures AS item
+        MERGE (temperature:LeadTemperatureConcept:OntologyConcept {id: item.id})
+        SET temperature += item
+        """,
+        temperatures=temperature_rows(),
+    )
+    tx.run(
+        """
+        UNWIND $reasons AS item
+        MERGE (reason:ReasonConcept:OntologyConcept {id: item.id})
+        SET reason += item
+        WITH reason, item
+        MATCH (category:ReasonCategory {code: item.categoryCode})
+        MATCH (action:ActionConcept {code: item.defaultActionCode})
+        MERGE (reason)-[:BELONGS_TO]->(category)
+        MERGE (reason)-[:RECOMMENDS_ACTION]->(action)
+        """,
+        reasons=reason_rows(),
+    )
+
+
 def _upsert_payload(tx, payload: dict[str, Any]) -> None:
+    rows = [_canonicalize_row(row) for row in payload["consultationRows"]]
     tx.run(
         """
         MERGE (store:Store:MockData {id: $store.id})
@@ -149,6 +223,12 @@ def _upsert_payload(tx, payload: dict[str, Any]) -> None:
         SET reason += row.nonConversionReason
         MERGE (customer)-[:HAS_NON_CONVERSION_REASON]->(reason)
         MERGE (consultation)-[:HAS_NON_CONVERSION_REASON]->(reason)
+        WITH store, service, user, event, customer, consultation, followUp, reason, row
+        OPTIONAL MATCH (matchedReasonConcept:ReasonConcept {code: row.nonConversionReason.reasonType})
+        MATCH (fallbackReasonConcept:ReasonConcept {code: 'NEEDS_FOLLOW_UP'})
+        WITH store, service, user, event, customer, consultation, followUp, reason, row,
+             coalesce(matchedReasonConcept, fallbackReasonConcept) AS reasonConcept
+        MERGE (reason)-[:INSTANCE_OF]->(reasonConcept)
 
         MERGE (signal:ConsultationSignal:MockData {id: row.consultationSignal.id})
         SET signal += row.consultationSignal
@@ -157,6 +237,12 @@ def _upsert_payload(tx, payload: dict[str, Any]) -> None:
         MERGE (insight:CustomerAiInsight:MockData {id: row.customerAiInsight.customerId})
         SET insight += row.customerAiInsight
         MERGE (customer)-[:HAS_AI_INSIGHT]->(insight)
+        WITH store, service, user, event, customer, consultation, followUp, reason, signal, insight, row
+        OPTIONAL MATCH (matchedTemperatureConcept:LeadTemperatureConcept {code: row.customerAiInsight.leadTemperature})
+        MATCH (fallbackTemperatureConcept:LeadTemperatureConcept {code: 'COLD'})
+        WITH store, service, user, event, customer, consultation, followUp, reason, signal, insight, row,
+             coalesce(matchedTemperatureConcept, fallbackTemperatureConcept) AS temperatureConcept
+        MERGE (insight)-[:HAS_TEMPERATURE]->(temperatureConcept)
 
         MERGE (target:EventTarget:MockData {id: row.eventTarget.id})
         SET target += row.eventTarget
@@ -174,17 +260,20 @@ def _upsert_payload(tx, payload: dict[str, Any]) -> None:
         MERGE (customer)-[:HAS_CONTACT_RESULT]->(contact)
         MERGE (followUp)-[:HAS_CONTACT_RESULT]->(contact)
         """,
-        rows=payload["consultationRows"],
+        rows=rows,
     )
 
 
 def _counts(tx, batch_id: str) -> dict[str, int]:
     result = {}
-    for label in LABELS:
+    for label in BUSINESS_LABELS:
         record = tx.run(
             f"MATCH (n:{label}:MockData {{mockBatchId: $batchId}}) RETURN count(n) AS count",
             batchId=batch_id,
         ).single()
+        result[label] = int(record["count"])
+    for label in ONTOLOGY_LABELS:
+        record = tx.run(f"MATCH (n:{label}) RETURN count(n) AS count").single()
         result[label] = int(record["count"])
     rel_record = tx.run(
         """
@@ -195,3 +284,29 @@ def _counts(tx, batch_id: str) -> dict[str, int]:
     ).single()
     result["Relationships"] = int(rel_record["count"])
     return result
+
+
+def _canonicalize_row(row: dict[str, Any]) -> dict[str, Any]:
+    canonical = dict(row)
+    reason = dict(row["nonConversionReason"])
+    original_reason = reason.get("reasonType")
+    canonical_reason = normalize_reason_code(original_reason)
+    reason["reasonType"] = canonical_reason
+    if original_reason != canonical_reason:
+        reason["originalReasonType"] = original_reason
+        reason["ontologyFallbackApplied"] = True
+    else:
+        reason["ontologyFallbackApplied"] = False
+    canonical["nonConversionReason"] = reason
+
+    insight = dict(row["customerAiInsight"])
+    original_temperature = insight.get("leadTemperature")
+    canonical_temperature = normalize_temperature_code(original_temperature)
+    insight["leadTemperature"] = canonical_temperature
+    if original_temperature != canonical_temperature:
+        insight["originalLeadTemperature"] = original_temperature
+        insight["ontologyFallbackApplied"] = True
+    else:
+        insight["ontologyFallbackApplied"] = False
+    canonical["customerAiInsight"] = insight
+    return canonical
