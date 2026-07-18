@@ -200,7 +200,7 @@ Invoke-RestMethod -Method Post `
 
 사용자가 LLM에 직접 질문을 입력하지 않습니다. 화면의 버튼을 누르면 프론트/Spring이 현재 화면의 고객, 문의, 상담, 분석 데이터를 정해진 FastAPI 요청 body로 조립하고, FastAPI가 OpenAI provider를 호출해 계약된 JSON object를 반환합니다.
 
-아래 `AI 출력` 값은 `2026-07-09`에 `OPENAI_API_KEY`, `AI_PROVIDER=auto`, `OPENAI_MODEL=gpt-4.1-mini` 설정으로 실제 FastAPI endpoint를 호출해 받은 OpenAI API 응답입니다.
+아래 `AI 출력` 값은 `2026-07-18`에 `AI_PROVIDER=heuristic`을 명시하고 FastAPI `TestClient`로 실제 endpoint를 호출해 받은 응답입니다.
 
 ### 1. 문의 내용 중간 평가
 
@@ -212,7 +212,7 @@ Invoke-RestMethod -Method Post `
 
 처리 흐름:
 
-프론트/Spring이 문의 메모, 서비스명, 문의 상태, 고객 기본 정보를 모아 `/ai/v1/inquiries/check-preview`로 POST합니다. 응답은 저장 전 경고와 보완 제안으로 표시합니다.
+프론트/Spring이 문의 메모, 서비스명, 문의 상태, 고객 기본 정보를 모아 `/ai/v1/inquiries/check-preview`로 POST합니다. 응답은 저장 전 AI가 확인한 7개 고정 항목과 확인 여부로 표시합니다.
 
 FastAPI 입력:
 
@@ -233,11 +233,51 @@ AI 출력:
 
 ```json
 {
-  "isValid": true,
-  "warnings": [],
-  "suggestions": [
-    "원하시는 PT 목표나 일정에 대해 자세히 말씀해 주세요.",
-    "가격 관련 문의가 있으시면 구체적으로 알려 주세요."
+  "confirmedCount": 3,
+  "totalCount": 7,
+  "items": [
+    {
+      "key": "INTEREST_SERVICE",
+      "label": "관심 상품",
+      "confirmed": true,
+      "value": "퍼스널 트레이닝"
+    },
+    {
+      "key": "EXERCISE_GOAL",
+      "label": "운동 목적",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "EXERCISE_EXPERIENCE",
+      "label": "운동 경험",
+      "confirmed": true,
+      "value": "운동 경험이 언급됨"
+    },
+    {
+      "key": "INJURY_HISTORY",
+      "label": "부상 이력",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "CUSTOMER_REQUEST",
+      "label": "고객 요청",
+      "confirmed": true,
+      "value": "고객 요청이 언급됨"
+    },
+    {
+      "key": "COUNSELOR_RESPONSE",
+      "label": "나의 응대",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "SPECIAL_NOTE",
+      "label": "특이사항",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    }
   ]
 }
 ```
@@ -252,7 +292,7 @@ AI 출력:
 
 처리 흐름:
 
-프론트/Spring이 상담 메모, 서비스명, 고객 기본 정보를 모아 `/ai/v1/consultations/check-preview`로 POST합니다. 응답은 상담 저장 전 경고와 보완 제안으로 표시합니다.
+프론트/Spring이 상담 메모, 서비스명, 고객 기본 정보를 모아 `/ai/v1/consultations/check-preview`로 POST합니다. 응답은 상담 저장 전 AI가 확인한 7개 고정 항목과 확인 여부로 표시합니다.
 
 FastAPI 입력:
 
@@ -272,11 +312,51 @@ AI 출력:
 
 ```json
 {
-  "isValid": true,
-  "warnings": [],
-  "suggestions": [
-    "고객님의 구체적인 건강 목표를 알려주세요.",
-    "상담 가능한 시간을 알려주시면 예약에 도움이 됩니다."
+  "confirmedCount": 3,
+  "totalCount": 7,
+  "items": [
+    {
+      "key": "INTEREST_SERVICE",
+      "label": "관심 상품",
+      "confirmed": true,
+      "value": "퍼스널 트레이닝"
+    },
+    {
+      "key": "EXERCISE_GOAL",
+      "label": "운동 목적",
+      "confirmed": true,
+      "value": "운동 목표가 언급됨"
+    },
+    {
+      "key": "EXERCISE_EXPERIENCE",
+      "label": "운동 경험",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "INJURY_HISTORY",
+      "label": "부상 이력",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "CUSTOMER_REQUEST",
+      "label": "고객 요청",
+      "confirmed": true,
+      "value": "고객 요청이 언급됨"
+    },
+    {
+      "key": "COUNSELOR_RESPONSE",
+      "label": "나의 응대",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "SPECIAL_NOTE",
+      "label": "특이사항",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    }
   ]
 }
 ```
@@ -291,7 +371,7 @@ AI 출력:
 
 처리 흐름:
 
-프론트/Spring이 고객 정보, 상담 원문, 상담 상품, 매장 context를 모아 `/ai/v1/consultations/analyze`로 POST합니다. 응답은 상담 요약, 고객 온도, 미전환 사유, 다음 행동, 후속 연락 정보로 저장하거나 화면에 표시합니다.
+프론트/Spring이 고객 정보, 상담 원문, 상담 상품, 매장 context, 첨부 상담 자료를 모아 `/ai/v1/consultations/analyze`로 POST합니다. 응답은 상담 요약, 고객 온도, 미전환 사유, 다음 행동, 후속 연락 정보로 저장하거나 화면에 표시합니다.
 
 FastAPI 입력:
 
@@ -327,7 +407,14 @@ FastAPI 입력:
     "storeId": "28f43532-f2fc-4581-827e-880d06f3cd88",
     "storeType": "GYM",
     "registrationStatus": "PENDING"
-  }
+  },
+  "attachedMaterials": [
+    {
+      "materialType": "OTHER",
+      "title": "kakao-chat",
+      "content": "고객: PT 가격 문의드립니다.\n상담사: 현재 6개월권 이벤트가 있습니다."
+    }
+  ]
 }
 ```
 
@@ -335,36 +422,36 @@ AI 출력:
 
 ```json
 {
-  "summary": "고객은 3개월 1:1 퍼스널 트레이닝 서비스에 관심을 보였으나, 상세 정보 부족으로 구매 결정에 이르지 못함.",
+  "summary": "홍길동 고객은 퍼스널 트레이닝 상담에서 PRICE 관련 보류 신호를 보였습니다.",
   "customerInsight": {
-    "leadTemperature": "미온적",
-    "temperatureBasis": "초기 상담에서 서비스를 충분히 이해하지 못함",
-    "priorityScore": 3
+    "leadTemperature": "WARM",
+    "temperatureBasis": "퍼스널 트레이닝 상담 내용과 PRICE 신호를 함께 고려했습니다.",
+    "priorityScore": 80
   },
   "nonConversionReasons": [
     {
-      "reasonType": "정보부족",
-      "role": "고객",
-      "reasonBasis": "서비스에 대한 구체적인 설명이 부족하여 신뢰도와 이해도가 낮음",
-      "confidence": "높음"
+      "reasonType": "PRICE",
+      "role": "PRIMARY",
+      "reasonBasis": "체중 감량이 목표이고 가격을 고민 중입니다.",
+      "confidence": "HIGH"
     }
   ],
   "nextBestAction": {
-    "title": "서비스 상세 안내 및 추가 상담 제안",
-    "description": "고객이 서비스를 충분히 이해할 수 있도록 상세한 안내 자료 제공 및 추가 상담 일정을 잡아 구매 전환 유도"
+    "title": "예산 맞춤 상품 안내",
+    "description": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
   },
   "followUp": {
     "recommendContactDate": "2026-07-12",
-    "memo": "카카오톡을 통한 상세 서비스 설명 메시지 발송 후 추가 상담 일정 조율 권장"
+    "memo": "KAKAO로 예산 맞춤 상품 안내 내용을 안내"
   },
   "followUpInsight": {
     "persuasionPoint": {
-      "keyMessage": "3개월 동안 1:1 맞춤 트레이닝으로 체계적인 관리가 가능합니다."
+      "keyMessage": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
     },
-    "cautionNote": "초기 상담에서 서비스 이해도가 낮아 이탈 가능성이 있으니 빠른 후속 조치 필요",
+    "cautionNote": "PRICE 이슈를 압박하지 말고 선택지를 제안합니다.",
     "actionBasis": {
-      "title": "추가 상담 권유",
-      "description": "고객이 서비스의 이점을 명확히 이해하게 하여 구매 결정에 도움"
+      "title": "예산 맞춤 상품 안내",
+      "description": "퍼스널 트레이닝 선택지를 예산별로 정리해 부담을 낮춥니다."
     }
   }
 }
@@ -413,23 +500,23 @@ AI 출력:
 
 ```json
 {
-  "priorityScore": 85,
+  "priorityScore": 80,
   "nextBestAction": {
-    "title": "가격 할인 프로모션 안내",
-    "description": "고객님께 현재 진행 중인 가격 할인 및 혜택을 자세히 안내하여 구매 결정을 유도하세요."
+    "title": "예산 맞춤 상품 안내",
+    "description": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
   },
   "followUp": {
-    "recommendContactDate": "2024-06-10",
-    "memo": "최근 상담에서 가격에 대한 부담을 보이셨습니다. 할인 프로모션 정보를 제공하며 다시 연락드리겠습니다."
+    "recommendContactDate": "2026-07-26",
+    "memo": "예산 맞춤 상품 안내 후속 연락"
   },
   "followUpInsight": {
     "persuasionPoint": {
-      "keyMessage": "현재 적용 가능한 가격 할인 혜택으로 부담을 줄일 수 있습니다."
+      "keyMessage": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
     },
-    "cautionNote": "가격에 민감한 고객이므로 무리한 판매 압박은 피하세요.",
+    "cautionNote": "PRICE 이슈를 압박하지 말고 선택지를 제안합니다.",
     "actionBasis": {
-      "title": "가격 관련 우려 해소",
-      "description": "가격 부담이 주요 비구매 사유이므로 가격 할인 혜택 안내가 필요합니다."
+      "title": "예산 맞춤 상품 안내",
+      "description": "상담 상품 선택지를 예산별로 정리해 부담을 낮춥니다."
     }
   }
 }
@@ -489,7 +576,7 @@ AI 출력:
 
 ```json
 {
-  "content": "안녕하세요! 최근에 상담해주셔서 감사합니다. 가격 때문에 고민이 많으신 걸로 알고 있는데, 저희가 더 좋은 혜택이나 맞춤 제안을 드릴 수 있도록 노력하겠습니다. 궁금한 점 있으시면 언제든지 편하게 문의해 주세요. 항상 고객님께 최선을 다하는 Fitback이 되겠습니다!",
+  "content": "홍길동님, 상담 때 말씀해주신 부분을 바탕으로 예산에 맞는 상품 안내 안내를 드립니다. 예산별 상품을 제안합니다. PRICE 부담을 줄일 수 있게 선택지를 정리했습니다. 첫 문장에 고객 이름을 넣어 주세요.",
   "versionType": "STANDARD",
   "tonePreset": "FRIENDLY"
 }
@@ -515,10 +602,12 @@ API 테스트 범위:
 - `/openapi.json`에 5개 POST path가 존재하는지 확인
 - `/docs` 접근 가능 여부 확인
 - camelCase 요청/응답 처리 확인
+- preview 응답이 `confirmedCount`, `totalCount`, 7개 고정 `items`를 반환하는지 확인
+- 분석 요청이 `attachedMaterials` 필드를 필수로 요구하고, 빈 배열은 허용하는지 확인
 - 정상 성공 응답 확인
 - validation 실패 시 `422` 확인
 - 내부 처리 오류 시 `code: AI_PROCESSING_FAILED` JSON 확인
-- OpenAI provider가 `gpt-4.1-mini`와 Pydantic response format으로 구조화 응답을 요청하는지 fake client로 확인
+- OpenAI provider가 Pydantic response format으로 구조화 응답을 요청하고 preview 코드북/count를 정규화하는지 fake client로 확인
 
 API별 호출 테스트:
 
@@ -526,10 +615,11 @@ API별 호출 테스트:
 | --- | --- | --- |
 | `GET /docs` | `test_docs_endpoint_is_available` | Swagger UI 문서 endpoint가 `200`과 `text/html`로 응답하는지 확인 |
 | `GET /openapi.json` | `test_openapi_exposes_required_paths` | Spring에서 호출할 5개 POST path가 OpenAPI schema에 노출되는지 확인 |
-| `POST /ai/v1/inquiries/check-preview` | `test_inquiry_preview_accepts_camel_case_and_returns_json_object` | camelCase 요청을 받고 `isValid`, `warnings`, `suggestions` JSON을 반환하는지 확인 |
-| `POST /ai/v1/consultations/check-preview` | `test_consultation_preview_accepts_camel_case_and_returns_json_object` | 상담 preview 요청이 `200`과 `isValid: true`로 응답하는지 확인 |
+| `POST /ai/v1/inquiries/check-preview` | `test_inquiry_preview_accepts_camel_case_and_returns_json_object` | camelCase 요청을 받고 `confirmedCount`, `totalCount`, 7개 고정 `items` JSON을 반환하는지 확인 |
+| `POST /ai/v1/consultations/check-preview` | `test_consultation_preview_accepts_camel_case_and_returns_json_object` | 상담 preview 요청이 7개 고정 preview item과 canonical label(`나의 응대` 포함)을 반환하는지 확인 |
 | `POST /ai/v1/consultations/analyze` | `test_consultation_analyze_returns_required_fields` | `summary`, `customerInsight`, `nonConversionReasons`, `nextBestAction`, `followUp`, `followUpInsight` 필수 필드를 반환하는지 확인 |
 | `POST /ai/v1/consultations/analyze` | `test_consultation_analyze_rejects_bad_datetime` | 잘못된 datetime 입력을 `422` validation error로 거절하는지 확인 |
+| `POST /ai/v1/consultations/analyze` | `test_analysis_requires_attached_materials_field_even_when_empty` | `attachedMaterials` 누락을 `422`로 거절하고 빈 배열은 허용하는지 확인 |
 | `POST /ai/v1/consultations/next-action` | `test_next_action_returns_required_contract` | `priorityScore`, `nextBestAction`, `followUp` 계약 필드를 반환하는지 확인 |
 | `POST /ai/v1/messages/generate` | `test_message_generate_returns_requested_enums` | 요청한 `tonePreset`, `versionType`을 유지하고 메시지 본문을 반환하는지 확인 |
 | 전체 POST API | `test_all_endpoints_return_422_for_invalid_payloads` | 각 API가 잘못된 payload를 `422`로 거절하는지 확인 |
@@ -542,7 +632,7 @@ python -m compileall -q src tests
 PASS
 
 python -m pytest -q
-35 passed, 1 warning
+39 passed, 1 warning
 ```
 
 참고: 실제 OpenAI API 호출은 비용이 발생할 수 있어 자동 테스트에서 실행하지 않습니다. 운영 키 검증은 로컬에서 `AI_PROVIDER=openai`와 `OPENAI_API_KEY`를 설정한 뒤 FastAPI endpoint를 직접 호출해 확인합니다.

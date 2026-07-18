@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, timedelta
-from typing import TypeVar
+from typing import TypeVar, cast
 from uuid import UUID
 
 from openai import OpenAI, OpenAIError
@@ -22,7 +22,10 @@ from .api_models import (
     NextActionResponse,
     NextBestAction,
     NonConversionReason,
+    PREVIEW_CODEBOOK,
+    PREVIEW_UNKNOWN_VALUE,
     PersuasionPoint,
+    PreviewItem,
     PreviewResponse,
 )
 from .config import AiSettings, load_ai_settings
@@ -144,10 +147,10 @@ class OpenAiProvider(AiProvider):
         return self._complete(
             PreviewResponse,
             (
-                "문의 등록 전 입력 내용을 평가하세요. 한국어, 숫자, 일반 문장부호는 정상 입력입니다. "
-                "request.rawText가 10자 이상이고 request.serviceName이 비어 있지 않으면 기본적으로 isValid=true입니다. "
-                "문의 내용에 서비스 관심사나 가격/일정/목표 중 하나 이상이 있으면 isValid=true로 판단하세요. "
-                "warnings는 실제 누락이나 모호함이 있을 때만 작성하고, suggestions는 다음 상담에서 확인할 보완 질문을 한국어로 작성하세요."
+                "문의 등록 전 입력 내용을 평가하세요. 응답은 confirmedCount, totalCount, items만 포함합니다. "
+                "items는 반드시 INTEREST_SERVICE, EXERCISE_GOAL, EXERCISE_EXPERIENCE, INJURY_HISTORY, "
+                "CUSTOMER_REQUEST, COUNSELOR_RESPONSE, SPECIAL_NOTE 순서의 7개 항목을 모두 반환하세요. "
+                "확인되지 않은 항목은 confirmed=false, value='아직 확인되지 않음'으로 반환하세요."
             ),
             request,
         )
@@ -156,11 +159,10 @@ class OpenAiProvider(AiProvider):
         return self._complete(
             PreviewResponse,
             (
-                "상담 등록 전 입력 내용을 평가하세요. 한국어, 숫자, 일반 문장부호는 정상 입력입니다. "
-                "request.rawText가 10자 이상이고 request.serviceName이 비어 있지 않으면 기본적으로 isValid=true입니다. "
-                "상담 내용에 고객 목표, 가능 시간, 가격, 서비스 관심사 중 하나 이상이 있으면 isValid=true로 판단하세요. "
-                "rawText에 이미 있는 내용을 누락됐다고 경고하지 마세요. "
-                "warnings는 실제 누락이나 모호함이 있을 때만 작성하고, suggestions는 다음 상담에서 확인할 보완 질문을 한국어로 작성하세요."
+                "상담 등록 전 입력 내용을 평가하세요. 응답은 confirmedCount, totalCount, items만 포함합니다. "
+                "items는 반드시 INTEREST_SERVICE, EXERCISE_GOAL, EXERCISE_EXPERIENCE, INJURY_HISTORY, "
+                "CUSTOMER_REQUEST, COUNSELOR_RESPONSE, SPECIAL_NOTE 순서의 7개 항목을 모두 반환하세요. "
+                "확인되지 않은 항목은 confirmed=false, value='아직 확인되지 않음'으로 반환하세요."
             ),
             request,
         )
@@ -224,7 +226,7 @@ class OpenAiProvider(AiProvider):
                 if not content:
                     raise RuntimeError("OpenAI returned an empty response.")
                 parsed = response_model.model_validate_json(content)
-            return _normalize_response(parsed)
+            return _normalize_response(parsed, request)
         except (OpenAIError, json.JSONDecodeError, ValueError, IndexError, AttributeError) as exc:
             raise RuntimeError("OpenAI AI processing failed") from exc
 
@@ -239,14 +241,36 @@ def get_ai_provider() -> AiProvider:
 
 
 def _preview_response(raw_text: str, service_name: str) -> PreviewResponse:
-    warnings = []
-    suggestions = []
-    if len(raw_text) < 20:
-        warnings.append("입력 내용이 짧아 AI 판단 근거가 부족할 수 있습니다.")
-        suggestions.append("고객의 목표, 예산, 가능한 방문 시간을 더 적어주세요.")
-    else:
-        suggestions.append(f"{service_name} 상담 목적과 방문 가능 시간을 확인해 주세요.")
-    return PreviewResponse(is_valid=True, warnings=warnings, suggestions=suggestions)
+    text = raw_text.casefold()
+    detected_values = {
+        "INTEREST_SERVICE": service_name,
+        "EXERCISE_GOAL": _detect_value(text, ["감량", "다이어트", "체중", "근력", "목표"], "운동 목표가 언급됨"),
+        "EXERCISE_EXPERIENCE": _detect_value(text, ["경험", "해봤", "운동했", "pt", "헬스"], "운동 경험이 언급됨"),
+        "INJURY_HISTORY": _detect_value(text, ["부상", "통증", "허리", "무릎", "어깨"], "부상 또는 통증 이력이 언급됨"),
+        "CUSTOMER_REQUEST": _detect_value(text, ["문의", "요청", "궁금", "가능", "가격", "일정"], "고객 요청이 언급됨"),
+        "COUNSELOR_RESPONSE": _detect_value(text, ["안내", "상담사", "답변", "설명", "추천"], "상담 응대가 언급됨"),
+        "SPECIAL_NOTE": _detect_value(text, ["특이", "주의", "메모", "기타", "참고"], "특이사항이 언급됨"),
+    }
+    items = [
+        PreviewItem(
+            key=key,
+            label=label,
+            confirmed=detected_values[key] is not None,
+            value=detected_values[key] or PREVIEW_UNKNOWN_VALUE,
+        )
+        for key, label in PREVIEW_CODEBOOK
+    ]
+    return PreviewResponse(
+        confirmed_count=sum(1 for item in items if item.confirmed),
+        total_count=len(items),
+        items=items,
+    )
+
+
+def _detect_value(text: str, keywords: list[str], value: str) -> str | None:
+    if any(keyword in text for keyword in keywords):
+        return value
+    return None
 
 
 def _first_reason_type(reasons: list[NonConversionReason]) -> str:
@@ -276,8 +300,10 @@ def _date_from_uuid(value: UUID) -> date:
     return date.today() + timedelta(days=day_offset)
 
 
-def _normalize_response(response: ResponseModel) -> ResponseModel:
-    if isinstance(response, ConsultationAnalyzeResponse):
+def _normalize_response(response: ResponseModel, request: BaseModel) -> ResponseModel:
+    if isinstance(response, PreviewResponse):
+        return cast(ResponseModel, response)
+    elif isinstance(response, ConsultationAnalyzeResponse):
         response.customer_insight.lead_temperature = normalize_temperature_code(
             response.customer_insight.lead_temperature,
             allow_unknown=False,
@@ -285,6 +311,9 @@ def _normalize_response(response: ResponseModel) -> ResponseModel:
         response.non_conversion_reasons = _normalize_reasons(response.non_conversion_reasons)
     elif isinstance(response, NextActionResponse):
         response.priority_score = max(0, min(100, response.priority_score))
+    elif isinstance(response, MessageGenerateResponse) and isinstance(request, MessageGenerateRequest):
+        response.version_type = request.message_options.version_type
+        response.tone_preset = request.message_options.tone_preset
     return response
 
 

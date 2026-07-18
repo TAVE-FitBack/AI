@@ -7,7 +7,7 @@ import pytest
 
 from fitback_ai.ai_provider import OpenAiProvider
 from fitback_ai.config import AiSettings, load_ai_settings
-from tests.test_api import analysis_payload
+from tests.test_api import analysis_payload, inquiry_preview_payload, message_payload
 
 
 def test_load_ai_settings_uses_openai_key(monkeypatch):
@@ -186,6 +186,96 @@ def test_openai_provider_rejects_unknown_controlled_ontology_fields():
 
     with pytest.raises(RuntimeError):
         provider.analyze_consultation(provider_request())
+
+
+def test_openai_provider_normalizes_preview_codebook_and_counts():
+    response_payload = {
+        "confirmedCount": 99,
+        "totalCount": 1,
+        "items": [
+            {
+                "key": "CUSTOMER_REQUEST",
+                "label": "고객요청사항",
+                "confirmed": True,
+                "value": "가격 문의",
+            },
+            {
+                "key": "EXERCISE_GOAL",
+                "label": "운동목표",
+                "confirmed": False,
+                "value": "DIET-VALUE",
+            },
+            {
+                "key": "INTEREST_SERVICE",
+                "label": "관심서비스",
+                "confirmed": True,
+                "value": "퍼스널 트레이닝",
+            },
+        ],
+    }
+    provider = OpenAiProvider(
+        AiSettings(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
+            timeout_seconds=25,
+        ),
+        client=FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False)),
+    )
+
+    from fitback_ai.api_models import InquiryPreviewRequest
+
+    result = provider.check_inquiry_preview(InquiryPreviewRequest.model_validate(inquiry_preview_payload()))
+
+    assert result.confirmed_count == 2
+    assert result.total_count == 7
+    assert [item.key for item in result.items] == [
+        "INTEREST_SERVICE",
+        "EXERCISE_GOAL",
+        "EXERCISE_EXPERIENCE",
+        "INJURY_HISTORY",
+        "CUSTOMER_REQUEST",
+        "COUNSELOR_RESPONSE",
+        "SPECIAL_NOTE",
+    ]
+    assert [item.label for item in result.items] == [
+        "관심 상품",
+        "운동 목적",
+        "운동 경험",
+        "부상 이력",
+        "고객 요청",
+        "나의 응대",
+        "특이사항",
+    ]
+    assert result.items[1].confirmed is False
+    assert result.items[1].value == "아직 확인되지 않음"
+
+
+def test_openai_provider_overwrites_message_enums_with_request_values():
+    response_payload = {
+        "content": "고객님께 보낼 메시지입니다.",
+        "versionType": "SHORT",
+        "tonePreset": "PROFESSIONAL",
+    }
+    provider = OpenAiProvider(
+        AiSettings(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
+            timeout_seconds=25,
+        ),
+        client=FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False)),
+    )
+
+    from fitback_ai.api_models import MessageGenerateRequest
+
+    request = MessageGenerateRequest.model_validate(message_payload())
+    result = provider.generate_message(request)
+
+    assert result.version_type == request.message_options.version_type
+    assert result.tone_preset == request.message_options.tone_preset
 
 
 def provider_request():

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def to_camel(value: str) -> str:
@@ -85,6 +85,19 @@ class MessageVersionType(StrEnum):
     STANDARD = "STANDARD"
 
 
+PREVIEW_UNKNOWN_VALUE = "아직 확인되지 않음"
+
+PREVIEW_CODEBOOK = [
+    ("INTEREST_SERVICE", "관심 상품"),
+    ("EXERCISE_GOAL", "운동 목적"),
+    ("EXERCISE_EXPERIENCE", "운동 경험"),
+    ("INJURY_HISTORY", "부상 이력"),
+    ("CUSTOMER_REQUEST", "고객 요청"),
+    ("COUNSELOR_RESPONSE", "나의 응대"),
+    ("SPECIAL_NOTE", "특이사항"),
+]
+
+
 class CustomerInfo(ApiModel):
     name: str = Field(min_length=1)
     gender: Gender
@@ -119,10 +132,36 @@ class ConsultationPreviewRequest(ApiModel):
         return require_text(value)
 
 
+class PreviewItem(ApiModel):
+    key: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    confirmed: bool
+    value: str = Field(min_length=1)
+
+    @field_validator("key", "label", "value")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        return require_text(value)
+
+
 class PreviewResponse(ApiModel):
-    is_valid: bool
-    warnings: list[str]
-    suggestions: list[str]
+    confirmed_count: int = Field(ge=0)
+    total_count: int = Field(ge=0)
+    items: list[PreviewItem]
+
+    @model_validator(mode="after")
+    def canonicalize_preview_items(self) -> PreviewResponse:
+        items_by_key = {item.key: item for item in self.items}
+        canonical_items = []
+        for key, label in PREVIEW_CODEBOOK:
+            source = items_by_key.get(key)
+            confirmed = bool(source and source.confirmed)
+            value = source.value if confirmed and source.value.strip() else PREVIEW_UNKNOWN_VALUE
+            canonical_items.append(PreviewItem(key=key, label=label, confirmed=confirmed, value=value))
+        self.items = canonical_items
+        self.total_count = len(canonical_items)
+        self.confirmed_count = sum(1 for item in canonical_items if item.confirmed)
+        return self
 
 
 class AnalysisCustomer(ApiModel):
@@ -182,11 +221,23 @@ class StoreContext(ApiModel):
     registration_status: ConsultationRegistrationStatus
 
 
+class AttachedMaterial(ApiModel):
+    material_type: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+
+    @field_validator("material_type", "title", "content")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        return require_text(value)
+
+
 class ConsultationAnalyzeRequest(ApiModel):
     customer: AnalysisCustomer
     consultation: AnalysisConsultation
     service: AnalysisService
     store_context: StoreContext
+    attached_materials: list[AttachedMaterial]
 
 
 class CustomerInsight(ApiModel):

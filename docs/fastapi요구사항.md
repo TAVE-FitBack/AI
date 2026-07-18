@@ -94,15 +94,85 @@ FastAPI 담당자는 아래 5개 엔드포인트를 구현하고, 요청/응답 
 | `customerInfo.birthDate` | date string | Y | 생년월일 |
 
 응답은 현재 Spring에서 `Map<String, Object>`로 그대로 프론트엔드에 전달한다.
-따라서 FastAPI 팀이 프론트엔드 팀과 점검 결과 스키마를 확정해야 한다. 최소 권장 형식:
+따라서 FastAPI 팀은 아래 스키마를 기준으로 점검 결과를 반환한다.
+이 응답은 입력 원문에서 AI가 확인한 정보를 우측 `AI가 확인한 정보` 패널에 표시하기 위한 값이다.
 
 ```json
 {
-  "isValid": true,
-  "warnings": [],
-  "suggestions": ["희망 방문 시간을 추가로 확인해 주세요."]
+  "confirmedCount": 3,
+  "totalCount": 7,
+  "items": [
+    {
+      "key": "INTEREST_SERVICE",
+      "label": "관심 상품",
+      "confirmed": true,
+      "value": "헬스 6개월, 12개월"
+    },
+    {
+      "key": "EXERCISE_GOAL",
+      "label": "운동 목적",
+      "confirmed": true,
+      "value": "다이어트"
+    },
+    {
+      "key": "EXERCISE_EXPERIENCE",
+      "label": "운동 경험",
+      "confirmed": true,
+      "value": "이전에 헬스장 다녔고 거기서 PT 6개월간 받은 경험이 있음"
+    },
+    {
+      "key": "INJURY_HISTORY",
+      "label": "부상 이력",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "CUSTOMER_REQUEST",
+      "label": "고객 요청",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "COUNSELOR_RESPONSE",
+      "label": "나의 응대",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    },
+    {
+      "key": "SPECIAL_NOTE",
+      "label": "특이사항",
+      "confirmed": false,
+      "value": "아직 확인되지 않음"
+    }
+  ]
 }
 ```
+
+필드 규칙:
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---:|---|
+| `confirmedCount` | integer | Y | `confirmed=true`인 항목 수 |
+| `totalCount` | integer | Y | 전체 확인 항목 수. 현재 화면 기준 `7` |
+| `items` | array | Y | AI 확인 항목 목록 |
+| `items[].key` | string | Y | 항목 식별자 |
+| `items[].label` | string | Y | 화면 표시명 |
+| `items[].confirmed` | boolean | Y | 원문에서 해당 정보를 확인했는지 여부 |
+| `items[].value` | string | Y | 확인된 값. 미확인 시 `아직 확인되지 않음` |
+
+권장 항목과 순서:
+
+| key | label |
+|---|---|
+| `INTEREST_SERVICE` | 관심 상품 |
+| `EXERCISE_GOAL` | 운동 목적 |
+| `EXERCISE_EXPERIENCE` | 운동 경험 |
+| `INJURY_HISTORY` | 부상 이력 |
+| `CUSTOMER_REQUEST` | 고객 요청 |
+| `COUNSELOR_RESPONSE` | 나의 응대 |
+| `SPECIAL_NOTE` | 특이사항 |
+
+FastAPI는 위 7개 항목을 모두 반환해야 한다. 확인되지 않은 항목도 생략하지 않고 `confirmed=false`, `value="아직 확인되지 않음"`으로 반환한다.
 
 빈 body 또는 JSON object가 아닌 응답은 허용하지 않는다.
 
@@ -135,8 +205,8 @@ FastAPI 담당자는 아래 5개 엔드포인트를 구현하고, 요청/응답 
 | `customerInfo.gender` | `Gender` | Y | 성별 |
 | `customerInfo.birthDate` | date string | Y | 생년월일 |
 
-응답은 문의 중간 점검과 마찬가지로 자유 형식 JSON object이며 Spring이 그대로 전달한다.
-두 점검 API는 동일한 응답 스키마를 사용하는 것을 권장한다.
+응답은 문의 중간 점검과 동일한 `confirmedCount`, `totalCount`, `items` 스키마를 사용한다.
+Spring은 응답을 `Map<String, Object>`로 받아 그대로 전달한다.
 
 ## 6. 상담 AI 분석
 
@@ -178,14 +248,24 @@ FastAPI 담당자는 아래 5개 엔드포인트를 구현하고, 요청/응답 
     "storeId": "28f43532-f2fc-4581-827e-880d06f3cd88",
     "storeType": "GYM",
     "registrationStatus": "PENDING"
-  }
+  },
+  "attachedMaterials": [
+    {
+      "materialType": "OTHER",
+      "title": "kakao-chat",
+      "content": "고객: PT 가격 문의드립니다.\n상담자: 현재 6개월권 이벤트가 있습니다."
+    }
+  ]
 }
 ```
 
 요청 필수 여부:
 
-- 최상위 `customer`, `consultation`, `service`, `storeContext`는 필수이다.
+- 최상위 `customer`, `consultation`, `service`, `storeContext`, `attachedMaterials`는 필수이다.
 - `consultation.stage`, `service.description`, `service.price`는 `null`일 수 있다.
+- `attachedMaterials`는 상담자료가 없으면 빈 배열이다.
+- `attachedMaterials[].materialType`, `attachedMaterials[].title`, `attachedMaterials[].content`는 Spring에서 문자열로 전달한다.
+- 첨부자료는 AI 본분석 참고 입력으로만 사용하며, 첨부자료별 별도 분석 결과를 응답하지 않는다.
 - 그 외 위 예시에 표시된 모든 필드는 Spring 도메인에서 필수값으로 구성된다.
 
 정상 응답:
@@ -408,8 +488,8 @@ Spring이 응답 성공으로 인정하기 위한 필수 조건은 `content`가 
 
 ## 10. 연동 시 주의할 현재 제약
 
-1. 두 `check-preview` 응답은 아직 명시적인 Spring DTO가 없고 프론트엔드로 그대로 전달된다.
-   FastAPI 구현 전에 프론트엔드와 최종 응답 스키마를 확정하는 것이 필요하다.
+1. 두 `check-preview` 응답은 명시적인 Spring DTO가 없고 프론트엔드로 그대로 전달된다.
+   FastAPI는 이 문서의 `confirmedCount`, `totalCount`, `items` 스키마와 7개 고정 항목을 지켜야 한다.
 2. `leadTemperature`, `reasonType`, `role`, `confidence`의 값 집합이 코드상 고정되어 있지 않다.
    AI 서버가 임의 문자열을 계속 생성하면 검색과 통계가 불안정해지므로 양 팀이 허용 값 목록을
    합의해야 한다.

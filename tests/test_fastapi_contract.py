@@ -19,6 +19,25 @@ REQUIRED_POST_PATHS = [
     "/ai/v1/messages/generate",
 ]
 
+PREVIEW_KEYS = [
+    "INTEREST_SERVICE",
+    "EXERCISE_GOAL",
+    "EXERCISE_EXPERIENCE",
+    "INJURY_HISTORY",
+    "CUSTOMER_REQUEST",
+    "COUNSELOR_RESPONSE",
+    "SPECIAL_NOTE",
+]
+PREVIEW_LABELS = [
+    "관심 상품",
+    "운동 목적",
+    "운동 경험",
+    "부상 이력",
+    "고객 요청",
+    "나의 응대",
+    "특이사항",
+]
+
 
 @pytest.fixture(autouse=True)
 def use_heuristic_ai_provider(monkeypatch):
@@ -67,11 +86,33 @@ def test_success_responses_use_camel_case_not_snake_case():
         assert_no_snake_case_keys(body)
 
 
+def test_preview_success_responses_use_documented_fixed_items():
+    cases = [
+        ("/ai/v1/inquiries/check-preview", inquiry_preview_payload()),
+        ("/ai/v1/consultations/check-preview", consultation_preview_payload()),
+    ]
+
+    for path, payload in cases:
+        response = client.post(path, json=payload)
+
+        assert response.status_code == 200, path
+        body = response.json()
+        assert set(body) == {"confirmedCount", "totalCount", "items"}
+        assert body["totalCount"] == 7
+        assert [item["key"] for item in body["items"]] == PREVIEW_KEYS
+        assert [item["label"] for item in body["items"]] == PREVIEW_LABELS
+        assert body["confirmedCount"] == sum(1 for item in body["items"] if item["confirmed"])
+        assert all(isinstance(item["confirmed"], bool) for item in body["items"])
+        assert all(item["label"].strip() for item in body["items"])
+        assert all(item["value"].strip() for item in body["items"])
+
+
 def test_analysis_accepts_documented_nullable_request_fields():
     payload = analysis_payload()
     payload["consultation"]["stage"] = None
     payload["service"]["description"] = None
     payload["service"]["price"] = None
+    payload["attachedMaterials"] = []
 
     response = client.post("/ai/v1/consultations/analyze", json=payload)
 
@@ -119,6 +160,15 @@ def test_analysis_success_response_contains_required_non_blank_fields():
     assert body["followUp"]["recommendContactDate"]
     assert isinstance(body["nonConversionReasons"], list)
     assert body["nonConversionReasons"] is not None
+
+
+def test_analysis_requires_attached_materials_field_even_when_empty():
+    payload = analysis_payload()
+    payload.pop("attachedMaterials")
+
+    response = client.post("/ai/v1/consultations/analyze", json=payload)
+
+    assert response.status_code == 422
 
 
 def test_next_action_success_response_contains_required_non_null_fields():
@@ -280,6 +330,13 @@ def analysis_payload():
             "storeType": "GYM",
             "registrationStatus": "PENDING",
         },
+        "attachedMaterials": [
+            {
+                "materialType": "OTHER",
+                "title": "kakao-chat",
+                "content": "고객: PT 가격 문의드립니다.\n상담사: 현재 6개월권 이벤트가 있습니다.",
+            }
+        ],
     }
 
 

@@ -9,6 +9,25 @@ from fitback_ai.api import app
 
 client = TestClient(app)
 
+PREVIEW_KEYS = [
+    "INTEREST_SERVICE",
+    "EXERCISE_GOAL",
+    "EXERCISE_EXPERIENCE",
+    "INJURY_HISTORY",
+    "CUSTOMER_REQUEST",
+    "COUNSELOR_RESPONSE",
+    "SPECIAL_NOTE",
+]
+PREVIEW_LABELS = [
+    "관심 상품",
+    "운동 목적",
+    "운동 경험",
+    "부상 이력",
+    "고객 요청",
+    "나의 응대",
+    "특이사항",
+]
+
 
 @pytest.fixture(autouse=True)
 def use_heuristic_ai_provider(monkeypatch):
@@ -52,10 +71,13 @@ def test_inquiry_preview_accepts_camel_case_and_returns_json_object():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["isValid"] is True
-    assert isinstance(body["warnings"], list)
-    assert isinstance(body["suggestions"], list)
+    assert body["totalCount"] == 7
+    assert [item["key"] for item in body["items"]] == PREVIEW_KEYS
+    assert [item["label"] for item in body["items"]] == PREVIEW_LABELS
+    assert body["confirmedCount"] == sum(1 for item in body["items"] if item["confirmed"])
+    assert body["items"][0]["value"] == "퍼스널 트레이닝"
     assert "raw_text" not in body
+    assert "isValid" not in body
 
 
 def test_consultation_preview_accepts_camel_case_and_returns_json_object():
@@ -73,7 +95,11 @@ def test_consultation_preview_accepts_camel_case_and_returns_json_object():
     )
 
     assert response.status_code == 200
-    assert response.json()["isValid"] is True
+    body = response.json()
+    assert body["totalCount"] == 7
+    assert [item["key"] for item in body["items"]] == PREVIEW_KEYS
+    assert [item["label"] for item in body["items"]] == PREVIEW_LABELS
+    assert body["confirmedCount"] == sum(1 for item in body["items"] if item["confirmed"])
 
 
 def test_consultation_analyze_returns_required_fields():
@@ -215,10 +241,7 @@ def test_all_endpoints_return_422_for_invalid_payloads():
             "/ai/v1/consultations/analyze",
             {
                 **analysis_payload(),
-                "consultation": {
-                    **analysis_payload()["consultation"],
-                    "consultedAt": "2026-07-09 14:30:00",
-                },
+                "attachedMaterials": None,
             },
         ),
         (
@@ -392,4 +415,11 @@ def analysis_payload():
             "storeType": "GYM",
             "registrationStatus": "PENDING",
         },
+        "attachedMaterials": [
+            {
+                "materialType": "OTHER",
+                "title": "kakao-chat",
+                "content": "고객: PT 가격 문의드립니다.\n상담사: 현재 6개월권 이벤트가 있습니다.",
+            }
+        ],
     }
