@@ -151,6 +151,8 @@ class OpenAiProvider(AiProvider):
                 "items는 반드시 INTEREST_SERVICE, EXERCISE_GOAL, EXERCISE_EXPERIENCE, INJURY_HISTORY, "
                 "CUSTOMER_REQUEST, COUNSELOR_RESPONSE, SPECIAL_NOTE 순서의 7개 항목을 모두 반환하세요. "
                 "확인되지 않은 항목은 confirmed=false, value='아직 확인되지 않음'으로 반환하세요."
+                "value는 반드시 한국어로 작성하고 그 값은 한눈에 알아볼 수 있도록하세요."
+                "value에 들어갈 말은 언급됨으로 끝나는게 아니라 실제 세부 내용을 담아야 합니다. 예를 들어 '운동 목표가 언급됨'이 아니라 '체중 감량을 목표로 함'과 같이 작성해야 합니다."
             ),
             request,
         )
@@ -163,6 +165,8 @@ class OpenAiProvider(AiProvider):
                 "items는 반드시 INTEREST_SERVICE, EXERCISE_GOAL, EXERCISE_EXPERIENCE, INJURY_HISTORY, "
                 "CUSTOMER_REQUEST, COUNSELOR_RESPONSE, SPECIAL_NOTE 순서의 7개 항목을 모두 반환하세요. "
                 "확인되지 않은 항목은 confirmed=false, value='아직 확인되지 않음'으로 반환하세요."
+                "value는 반드시 한국어로 작성하고 그 값은 한눈에 알아볼 수 있도록하세요."
+                "value에 들어갈 말은 언급됨으로 끝나는게 아니라 실제 세부 내용을 담아야 합니다. 예를 들어 '상담 내용이 언급됨'이 아니라 '고객의 운동 목표는 체중 감량입니다'와 같이 작성해야 합니다."
             ),
             request,
         )
