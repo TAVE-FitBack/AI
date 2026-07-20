@@ -49,6 +49,11 @@ def test_graph_sync_projection_uses_persisted_rds_ids():
     assert payload["followUp"]["id"] == "55555555-5555-5555-5555-555555555555"
     assert payload["nonConversionReasons"][0]["id"] == "44444444-4444-4444-4444-444444444444"
     assert payload["consultation"]["aiAnalysisStatus"] == "COMPLETED"
+    assert payload["followUpAiInsight"]["persuasionPoint"] == '{"main": "Lower initial cost."}'
+    assert (
+        payload["followUpAiInsight"]["actionBasis"]
+        == '{"description": "Offer starter plan.", "title": "Budget option"}'
+    )
 
 
 def test_upsert_graph_sync_projection_writes_saved_ids_and_ontology_links():

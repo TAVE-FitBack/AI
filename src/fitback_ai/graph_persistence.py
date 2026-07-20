@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from .api_models import ConsultationGraphSyncRequest
@@ -115,11 +116,15 @@ def _optional_follow_up_ai_insight(value: dict[str, Any] | None) -> dict[str, An
         return None
     return {
         "followUpId": value["follow_up_id"],
-        "persuasionPoint": value["persuasion_point"],
+        "persuasionPoint": _json_property(value["persuasion_point"]),
         "cautionNote": value["caution_note"],
-        "actionBasis": value["action_basis"],
+        "actionBasis": _json_property(value["action_basis"]),
         "analyzedAt": value["analyzed_at"],
     }
+
+
+def _json_property(value: Any) -> str:
+    return json.dumps(value or {}, ensure_ascii=False, sort_keys=True)
 
 
 def _upsert_graph_sync_projection(tx, payload: dict[str, Any]) -> None:
