@@ -50,6 +50,17 @@ def load_settings() -> Settings:
     )
 
 
+def load_optional_settings() -> Settings | None:
+    load_dotenv()
+    if not _bool("GRAPH_PERSISTENCE_ENABLED"):
+        return None
+    required_names = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
+    missing = [name for name in required_names if not os.getenv(name, "").strip()]
+    if missing:
+        raise RuntimeError(f"{', '.join(missing)} is required when GRAPH_PERSISTENCE_ENABLED=true.")
+    return load_settings()
+
+
 def load_ai_settings() -> AiSettings:
     load_dotenv()
     api_key = _env("OPENAI_API_KEY") or _env("AI_API_KEY") or None

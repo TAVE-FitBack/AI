@@ -32,6 +32,7 @@ PREVIEW_LABELS = [
 @pytest.fixture(autouse=True)
 def use_heuristic_ai_provider(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "heuristic")
+    monkeypatch.setenv("GRAPH_PERSISTENCE_ENABLED", "false")
 
 
 def test_openapi_exposes_required_paths():
@@ -41,6 +42,7 @@ def test_openapi_exposes_required_paths():
         "/ai/v1/inquiries/check-preview",
         "/ai/v1/consultations/check-preview",
         "/ai/v1/consultations/analyze",
+        "/ai/v1/graph/consultations/sync",
         "/ai/v1/consultations/next-action",
         "/ai/v1/messages/generate",
     ]:
@@ -130,6 +132,22 @@ def test_consultation_analyze_rejects_bad_datetime():
     payload["consultation"]["consultedAt"] = "2026-07-09 14:30:00"
 
     response = client.post("/ai/v1/consultations/analyze", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_consultation_graph_sync_returns_noop_when_persistence_disabled():
+    response = client.post("/ai/v1/graph/consultations/sync", json=graph_sync_payload())
+
+    assert response.status_code == 200
+    assert response.json() == {"persisted": False, "counts": None}
+
+
+def test_consultation_graph_sync_rejects_mismatched_rds_references():
+    payload = graph_sync_payload()
+    payload["consultation"]["customerId"] = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    response = client.post("/ai/v1/graph/consultations/sync", json=payload)
 
     assert response.status_code == 422
 
@@ -255,6 +273,16 @@ def test_all_endpoints_return_422_for_invalid_payloads():
             },
         ),
         (
+            "/ai/v1/graph/consultations/sync",
+            {
+                **graph_sync_payload(),
+                "followUp": {
+                    **graph_sync_payload()["followUp"],
+                    "contactRound": 4,
+                },
+            },
+        ),
+        (
             "/ai/v1/messages/generate",
             {
                 **message_payload(),
@@ -279,6 +307,7 @@ def test_all_endpoints_return_processing_error_for_runtime_failures(monkeypatch)
         ("/ai/v1/inquiries/check-preview", "check_inquiry_preview", inquiry_preview_payload()),
         ("/ai/v1/consultations/check-preview", "check_consultation_preview", consultation_preview_payload()),
         ("/ai/v1/consultations/analyze", "analyze_consultation", analysis_payload()),
+        ("/ai/v1/graph/consultations/sync", "sync_consultation_graph", graph_sync_payload()),
         ("/ai/v1/consultations/next-action", "recommend_next_action", next_action_payload()),
         ("/ai/v1/messages/generate", "generate_message", message_payload()),
     ]
@@ -422,4 +451,87 @@ def analysis_payload():
                 "content": "고객: PT 가격 문의드립니다.\n상담사: 현재 6개월권 이벤트가 있습니다.",
             }
         ],
+    }
+
+
+def graph_sync_payload():
+    return {
+        "store": {
+            "storeId": "28f43532-f2fc-4581-827e-880d06f3cd88",
+            "storeType": "GYM",
+        },
+        "service": {
+            "serviceId": "88d53bb7-7210-4e77-a0c4-01778a54d68d",
+            "storeId": "28f43532-f2fc-4581-827e-880d06f3cd88",
+            "serviceName": "PT",
+            "description": "1:1 training",
+            "price": 600000,
+            "active": True,
+        },
+        "customer": {
+            "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+            "storeId": "28f43532-f2fc-4581-827e-880d06f3cd88",
+            "registeredServiceId": None,
+            "name": "Hong",
+            "gender": "MALE",
+            "birthDate": "1995-04-12",
+            "phoneNum": "010-1234-5678",
+            "preferredContactChannel": "KAKAO",
+            "status": "PENDING",
+            "inflowPathId": "71564cdc-6ad1-4978-a74e-150c576ce13c",
+            "inflowPathName": "Instagram",
+            "registeredAt": None,
+            "firstConsultAt": "2026-07-09",
+            "latestConsultAt": "2026-07-09",
+        },
+        "consultation": {
+            "consultationId": "6570aa21-d458-4885-9e69-d984fea51830",
+            "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+            "consultedServiceId": "88d53bb7-7210-4e77-a0c4-01778a54d68d",
+            "sessionNo": 1,
+            "consultedAt": "2026-07-09T14:30:00+09:00",
+            "stage": "CONSULTATION",
+            "sourceType": "DIRECT",
+            "rawText": "price concern",
+            "summary": "Customer has price concern.",
+            "aiAnalysisStatus": "COMPLETED",
+            "aiParsedAt": "2026-07-09T14:31:00+09:00",
+        },
+        "customerAiInsight": {
+            "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+            "leadTemperature": "WARM",
+            "temperatureBasis": "Interested but worried about price.",
+            "priorityScore": 78,
+            "analyzedAt": "2026-07-09T14:31:00+09:00",
+        },
+        "nonConversionReasons": [
+            {
+                "reasonId": "f5ceceea-4fa4-4317-bf68-6752af1cc0bd",
+                "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+                "consultationId": "6570aa21-d458-4885-9e69-d984fea51830",
+                "reasonType": "PRICE",
+                "role": "PRIMARY",
+                "reasonBasis": "Budget concern.",
+                "confidence": "HIGH",
+            }
+        ],
+        "followUp": {
+            "followUpId": "7e08bfd1-247d-4ca2-8038-5185945b7c37",
+            "customerId": "6c2d9b87-90aa-4ce2-96cb-a0875f103f04",
+            "consultationId": "6570aa21-d458-4885-9e69-d984fea51830",
+            "recommendContactDate": "2026-07-11",
+            "status": "PENDING",
+            "contactRound": 1,
+            "hasReply": False,
+            "repliedAt": None,
+            "snoozedUntil": None,
+            "memo": "Send budget option.",
+        },
+        "followUpAiInsight": {
+            "followUpId": "7e08bfd1-247d-4ca2-8038-5185945b7c37",
+            "persuasionPoint": {"main": "Lower initial cost."},
+            "cautionNote": "Avoid pressure.",
+            "actionBasis": {"title": "Budget option", "description": "Offer starter plan."},
+            "analyzedAt": "2026-07-09T14:31:00+09:00",
+        },
     }

@@ -9,11 +9,14 @@ from .ai_service import (
     check_inquiry_preview,
     generate_message,
     recommend_next_action,
+    sync_consultation_graph,
 )
 from .api_models import (
     ConsultationAnalyzeRequest,
     ConsultationAnalyzeResponse,
+    ConsultationGraphSyncRequest,
     ConsultationPreviewRequest,
+    GraphSyncResponse,
     InquiryPreviewRequest,
     MessageGenerateRequest,
     MessageGenerateResponse,
@@ -50,6 +53,11 @@ def consultation_check_preview(request: ConsultationPreviewRequest) -> PreviewRe
 @app.post("/ai/v1/consultations/analyze", response_model=ConsultationAnalyzeResponse)
 def consultation_analyze(request: ConsultationAnalyzeRequest) -> ConsultationAnalyzeResponse:
     return analyze_consultation(request)
+
+
+@app.post("/ai/v1/graph/consultations/sync", response_model=GraphSyncResponse)
+def consultation_graph_sync(request: ConsultationGraphSyncRequest) -> GraphSyncResponse:
+    return sync_consultation_graph(request)
 
 
 @app.post("/ai/v1/consultations/next-action", response_model=NextActionResponse)

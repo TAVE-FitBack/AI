@@ -70,11 +70,15 @@ class HeuristicAiProvider(AiProvider):
     def analyze_consultation(self, request: ConsultationAnalyzeRequest) -> ConsultationAnalyzeResponse:
         reason = classify_reason(request.consultation.raw_text)
         action = _action_for_reason(reason, request.service.service_name)
-        contact_date = request.consultation.consulted_at.date() + timedelta(days=3)
+        priority_score = priority_for_reason(reason)
+        contact_date = _recommended_contact_date(
+            request.consultation.consulted_at.date() + timedelta(days=3),
+            priority_score,
+        )
         insight = CustomerInsight(
             lead_temperature=temperature_for_status(str(request.store_context.registration_status), reason),
             temperature_basis=f"{request.service.service_name} 상담 내용과 {reason} 신호를 함께 고려했습니다.",
-            priority_score=priority_for_reason(reason),
+            priority_score=priority_score,
         )
         non_conversion_reasons = [
             NonConversionReason(
@@ -101,11 +105,12 @@ class HeuristicAiProvider(AiProvider):
         reason = _first_reason_type(request.ai_analysis.non_conversion_reasons)
         action = _action_for_reason(reason, "상담 상품")
         base_date = _date_from_uuid(request.latest_consultation.consultation_id)
+        priority_score = priority_for_reason(reason)
         return NextActionResponse(
-            priority_score=priority_for_reason(reason),
+            priority_score=priority_score,
             next_best_action=action,
             follow_up=FollowUp(
-                recommend_contact_date=base_date + timedelta(days=2),
+                recommend_contact_date=_recommended_contact_date(base_date + timedelta(days=2), priority_score),
                 memo=f"{action.title} 후속 연락",
             ),
             follow_up_insight=_follow_up_insight(action, reason),
@@ -301,7 +306,29 @@ def _follow_up_insight(action: NextBestAction, reason: str) -> FollowUpInsight:
 
 def _date_from_uuid(value: UUID) -> date:
     day_offset = int(value.hex[-2:], 16) % 7
-    return date.today() + timedelta(days=day_offset)
+    return _today() + timedelta(days=day_offset)
+
+
+def _recommended_contact_date(value: date, priority_score: int) -> date:
+    minimum = _today() + timedelta(days=_follow_up_delay_days(priority_score))
+    maximum = _today() + timedelta(days=14)
+    if value < minimum:
+        return minimum
+    if value > maximum:
+        return maximum
+    return value
+
+
+def _follow_up_delay_days(priority_score: int) -> int:
+    if priority_score >= 80:
+        return 1
+    if priority_score >= 60:
+        return 2
+    return 3
+
+
+def _today() -> date:
+    return date.today()
 
 
 def _normalize_response(response: ResponseModel, request: BaseModel) -> ResponseModel:
@@ -313,8 +340,16 @@ def _normalize_response(response: ResponseModel, request: BaseModel) -> Response
             allow_unknown=False,
         )
         response.non_conversion_reasons = _normalize_reasons(response.non_conversion_reasons)
+        response.follow_up.recommend_contact_date = _recommended_contact_date(
+            response.follow_up.recommend_contact_date,
+            response.customer_insight.priority_score,
+        )
     elif isinstance(response, NextActionResponse):
         response.priority_score = max(0, min(100, response.priority_score))
+        response.follow_up.recommend_contact_date = _recommended_contact_date(
+            response.follow_up.recommend_contact_date,
+            response.priority_score,
+        )
     elif isinstance(response, MessageGenerateResponse) and isinstance(request, MessageGenerateRequest):
         response.version_type = request.message_options.version_type
         response.tone_preset = request.message_options.tone_preset

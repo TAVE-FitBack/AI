@@ -28,8 +28,7 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 ├── pyproject.toml
 ├── sql.example
 ├── docs/
-│   ├── fastapi요구사항.md
-│   └── issue-log.md
+│   └── fastapi요구사항.md
 ├── src/
 │   └── fitback_ai/
 │       ├── api.py
@@ -38,11 +37,14 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 │       ├── ai_service.py
 │       ├── cli.py
 │       ├── config.py
+│       ├── graph_persistence.py
 │       ├── ontology.py
 │       └── neo4j_loader.py
 └── tests/
     ├── test_api.py
     ├── test_fastapi_contract.py
+    ├── test_graph_persistence.py
+    ├── test_neo4j_loader.py
     └── test_ontology.py
 ```
 
@@ -53,6 +55,7 @@ Fitback AI는 Fitback 매장 관리 어시스턴트를 위한 FastAPI AI 계약 
 - `src/fitback_ai/ai_service.py`: FastAPI route에서 AI provider를 호출하는 facade
 - `src/fitback_ai/ai_provider.py`: OpenAI API provider와 로컬 휴리스틱 provider
 - `tests/test_api.py`, `tests/test_fastapi_contract.py`: FastAPI 계약 테스트
+- `src/fitback_ai/graph_persistence.py`: RDS 저장 완료 projection을 AuraDB graph projection으로 upsert
 - `src/fitback_ai/ontology.py`: AI 판단과 그래프 적재가 공유하는 온톨로지 코드북
 - `src/fitback_ai/neo4j_loader.py`: Neo4j schema 설정, ontology sync, graph upsert, count 검증
 - `src/fitback_ai/cli.py`: `init`, `load`, `verify` 명령
@@ -115,6 +118,7 @@ API 문서:
 | 문의 내용 중간 평가 | `POST` | `/ai/v1/inquiries/check-preview` |
 | 상담 내용 중간 평가 | `POST` | `/ai/v1/consultations/check-preview` |
 | 상담 AI 분석 | `POST` | `/ai/v1/consultations/analyze` |
+| RDS/AuraDB graph sync | `POST` | `/ai/v1/graph/consultations/sync` |
 | 다음 행동 추천 | `POST` | `/ai/v1/consultations/next-action` |
 | 고객 메시지 생성 | `POST` | `/ai/v1/messages/generate` |
 
@@ -647,11 +651,26 @@ NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=replace-with-aura-password
 NEO4J_DATABASE=neo4j
 NEO4J_TRUST_SELF_SIGNED=false
+GRAPH_PERSISTENCE_ENABLED=false
 AURA_INSTANCEID=optional-instance-id
 AURA_INSTANCENAME=optional-instance-name
 ```
 
 로컬 네트워크나 보안 제품이 TLS 인증서를 대체해 `neo4j+s` 연결이 실패할 때만 로컬 검증 용도로 `NEO4J_TRUST_SELF_SIGNED=true`를 사용합니다. 기본값은 `false`입니다.
+
+RDS에 저장된 상담 분석 결과를 AuraDB에 동기화하려면 `.env`에서 다음 값을 켭니다.
+
+```env
+GRAPH_PERSISTENCE_ENABLED=true
+```
+
+이 값이 `true`일 때 `/ai/v1/graph/consultations/sync`는 BE/RDS가 저장한 실제 id를 기준으로 다음 projection을 AuraDB에 upsert합니다. `/ai/v1/consultations/analyze`는 AI 분석 응답만 반환하며 AuraDB에 직접 쓰지 않습니다.
+
+- `Store`, `Service`, `Customer`, `Consultation`
+- `FollowUp`, `NonConversionReason`, `CustomerAiInsight`
+- `ReasonConcept`, `LeadTemperatureConcept`와의 의미 관계
+
+Neo4j 설정이 없거나 AuraDB 연결이 실패하면 sync API는 `500`과 `AI_PROCESSING_FAILED`로 실패합니다. 이 값이 `false`이거나 없으면 sync API는 `persisted=false`를 반환하고 AuraDB에는 쓰지 않습니다.
 
 업무 데이터가 아직 없을 때 schema와 온톨로지만 초기화:
 

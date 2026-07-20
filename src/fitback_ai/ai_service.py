@@ -11,7 +11,10 @@ from .api_models import (
     NextActionRequest,
     NextActionResponse,
     PreviewResponse,
+    ConsultationGraphSyncRequest,
+    GraphSyncResponse,
 )
+from .graph_persistence import persist_consultation_graph
 
 
 def check_inquiry_preview(request: InquiryPreviewRequest) -> PreviewResponse:
@@ -32,3 +35,8 @@ def recommend_next_action(request: NextActionRequest) -> NextActionResponse:
 
 def generate_message(request: MessageGenerateRequest) -> MessageGenerateResponse:
     return get_ai_provider().generate_message(request)
+
+
+def sync_consultation_graph(request: ConsultationGraphSyncRequest) -> GraphSyncResponse:
+    counts = persist_consultation_graph(request)
+    return GraphSyncResponse(persisted=counts is not None, counts=counts)

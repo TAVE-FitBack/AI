@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+from datetime import date
 import json
 from types import SimpleNamespace
 
 import pytest
 
-from fitback_ai.ai_provider import OpenAiProvider
+from fitback_ai.ai_provider import HeuristicAiProvider, OpenAiProvider
 from fitback_ai.config import AiSettings, load_ai_settings
-from tests.test_api import analysis_payload, inquiry_preview_payload, message_payload
+from tests.test_api import analysis_payload, inquiry_preview_payload, message_payload, next_action_payload
 
 
 def test_load_ai_settings_uses_openai_key(monkeypatch):
@@ -138,6 +139,213 @@ def test_openai_provider_normalizes_legacy_reason_aliases():
     result = provider.analyze_consultation(provider_request())
 
     assert result.non_conversion_reasons[0].reason_type == "PRICE"
+
+
+def test_heuristic_provider_recommends_future_follow_up_date_by_priority(monkeypatch):
+    import fitback_ai.ai_provider as ai_provider
+
+    monkeypatch.setattr(ai_provider, "_today", lambda: date(2026, 7, 20))
+    provider = HeuristicAiProvider()
+
+    result = provider.analyze_consultation(provider_request())
+
+    assert result.follow_up.recommend_contact_date == date(2026, 7, 21)
+
+
+def test_openai_provider_recommends_future_follow_up_date_by_priority(monkeypatch):
+    import fitback_ai.ai_provider as ai_provider
+
+    monkeypatch.setattr(ai_provider, "_today", lambda: date(2026, 7, 20))
+    response_payload = {
+        "summary": "상담 분석입니다.",
+        "customerInsight": {
+            "leadTemperature": "WARM",
+            "temperatureBasis": "관심은 있으나 가격 부담이 있습니다.",
+            "priorityScore": 75,
+        },
+        "nonConversionReasons": [
+            {
+                "reasonType": "PRICE",
+                "role": "PRIMARY",
+                "reasonBasis": "가격을 고민 중입니다.",
+                "confidence": "HIGH",
+            }
+        ],
+        "nextBestAction": {
+            "title": "맞춤 상품 재안내",
+            "description": "예산별 상품 두 가지를 안내한다.",
+        },
+        "followUp": {
+            "recommendContactDate": "2026-07-11",
+            "memo": "오후 시간에 카카오톡 발송",
+        },
+        "followUpInsight": {
+            "persuasionPoint": {"keyMessage": "예산 내에서 시작할 수 있는 선택지"},
+            "cautionNote": "과도한 할인 강조를 피할 것",
+            "actionBasis": {
+                "title": "맞춤 상품 재안내",
+                "description": "가격이 핵심 미전환 사유임",
+            },
+        },
+    }
+    provider = OpenAiProvider(
+        AiSettings(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
+            timeout_seconds=25,
+        ),
+        client=FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False)),
+    )
+
+    result = provider.analyze_consultation(provider_request())
+
+    assert result.follow_up.recommend_contact_date == date(2026, 7, 22)
+
+
+def test_openai_provider_uses_priority_when_recommending_future_follow_up_date(monkeypatch):
+    import fitback_ai.ai_provider as ai_provider
+
+    monkeypatch.setattr(ai_provider, "_today", lambda: date(2026, 7, 20))
+    response_payload = {
+        "summary": "상담 분석입니다.",
+        "customerInsight": {
+            "leadTemperature": "COLD",
+            "temperatureBasis": "응답 의지가 낮습니다.",
+            "priorityScore": 45,
+        },
+        "nonConversionReasons": [
+            {
+                "reasonType": "NO_RESPONSE",
+                "role": "PRIMARY",
+                "reasonBasis": "응답이 없습니다.",
+                "confidence": "MEDIUM",
+            }
+        ],
+        "nextBestAction": {
+            "title": "응답 리마인드",
+            "description": "부담 없는 확인 메시지를 보낸다.",
+        },
+        "followUp": {
+            "recommendContactDate": "2026-07-11",
+            "memo": "카카오톡 리마인드",
+        },
+        "followUpInsight": {
+            "persuasionPoint": {"keyMessage": "부담 없는 확인"},
+            "cautionNote": "압박하지 말 것",
+            "actionBasis": {
+                "title": "응답 리마인드",
+                "description": "응답이 핵심 미전환 사유임",
+            },
+        },
+    }
+    provider = OpenAiProvider(
+        AiSettings(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
+            timeout_seconds=25,
+        ),
+        client=FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False)),
+    )
+
+    result = provider.analyze_consultation(provider_request())
+
+    assert result.follow_up.recommend_contact_date == date(2026, 7, 23)
+
+
+def test_openai_provider_caps_unrealistic_future_follow_up_date(monkeypatch):
+    import fitback_ai.ai_provider as ai_provider
+
+    monkeypatch.setattr(ai_provider, "_today", lambda: date(2026, 7, 20))
+    response_payload = {
+        "summary": "상담 분석입니다.",
+        "customerInsight": {
+            "leadTemperature": "WARM",
+            "temperatureBasis": "관심은 있으나 장기 보류입니다.",
+            "priorityScore": 75,
+        },
+        "nonConversionReasons": [
+            {
+                "reasonType": "NEEDS_FOLLOW_UP",
+                "role": "PRIMARY",
+                "reasonBasis": "추후 확인이 필요합니다.",
+                "confidence": "MEDIUM",
+            }
+        ],
+        "nextBestAction": {
+            "title": "추후 확인",
+            "description": "상황을 다시 확인한다.",
+        },
+        "followUp": {
+            "recommendContactDate": "3202-05-10",
+            "memo": "비현실적 날짜 보정",
+        },
+        "followUpInsight": {
+            "persuasionPoint": {"keyMessage": "현실적인 재연락"},
+            "cautionNote": "너무 긴 간격은 피할 것",
+            "actionBasis": {
+                "title": "추후 확인",
+                "description": "비현실적 날짜 보정",
+            },
+        },
+    }
+    provider = OpenAiProvider(
+        AiSettings(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
+            timeout_seconds=25,
+        ),
+        client=FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False)),
+    )
+
+    result = provider.analyze_consultation(provider_request())
+
+    assert result.follow_up.recommend_contact_date == date(2026, 8, 3)
+
+
+def test_openai_provider_recommends_future_next_action_follow_up_date_by_priority(monkeypatch):
+    import fitback_ai.ai_provider as ai_provider
+    from fitback_ai.api_models import NextActionRequest
+
+    monkeypatch.setattr(ai_provider, "_today", lambda: date(2026, 7, 20))
+    response_payload = {
+        "priorityScore": 80,
+        "nextBestAction": {
+            "title": "맞춤 상품 재안내",
+            "description": "예산별 상품 두 가지를 안내한다.",
+        },
+        "followUp": {
+            "recommendContactDate": "2026-07-11",
+            "memo": "오후 시간에 카카오톡 발송",
+        },
+        "followUpInsight": {
+            "persuasionPoint": {"keyMessage": "예산 내에서 시작할 수 있는 선택지"},
+            "cautionNote": "과도한 할인 강조를 피할 것",
+            "actionBasis": {
+                "title": "맞춤 상품 재안내",
+                "description": "가격이 핵심 미전환 사유임",
+            },
+        },
+    }
+    provider = OpenAiProvider(
+        AiSettings(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4.1-mini",
+            base_url="https://api.openai.com/v1",
+            timeout_seconds=25,
+        ),
+        client=FakeOpenAIClient(json.dumps(response_payload, ensure_ascii=False)),
+    )
+
+    result = provider.recommend_next_action(NextActionRequest.model_validate(next_action_payload()))
+
+    assert result.follow_up.recommend_contact_date == date(2026, 7, 21)
 
 
 def test_openai_provider_rejects_unknown_controlled_ontology_fields():
