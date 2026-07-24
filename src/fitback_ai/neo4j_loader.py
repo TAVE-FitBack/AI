@@ -81,6 +81,15 @@ def verify_graph(settings: Settings) -> dict[str, int]:
             return session.execute_read(_counts)
 
 
+def verify_graph_quality(settings: Settings) -> dict[str, int]:
+    with _driver(settings) as driver:
+        driver.verify_connectivity()
+        with driver.session(database=settings.neo4j_database) as session:
+            counts = session.execute_read(_counts)
+            quality = session.execute_read(_quality_counts)
+            return {**counts, **quality}
+
+
 def _driver(settings: Settings):
     try:
         return GraphDatabase.driver(
@@ -276,6 +285,21 @@ def _counts(tx) -> dict[str, int]:
         businessLabels=BUSINESS_LABELS,
     ).single()
     result["Relationships"] = int(rel_record["count"])
+    return result
+
+
+def _quality_counts(tx) -> dict[str, int]:
+    result = {}
+    for label in LABELS:
+        record = tx.run(
+            f"""
+            MATCH (n:{label})
+            WITH n.id AS id, count(*) AS count
+            WHERE id IS NOT NULL AND count > 1
+            RETURN count(*) AS count
+            """
+        ).single()
+        result[f"{label}DuplicateId"] = int(record["count"])
     return result
 
 

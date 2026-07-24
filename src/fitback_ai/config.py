@@ -23,6 +23,15 @@ class AiSettings:
     timeout_seconds: float
 
 
+@dataclass(frozen=True)
+class RdsSyncSettings:
+    database_url: str
+    username: str
+    password: str
+    batch_size: int
+    include_pii: bool
+
+
 def load_dotenv(path: Path = Path(".env")) -> None:
     if not path.exists():
         return
@@ -52,7 +61,7 @@ def load_settings() -> Settings:
 
 def load_optional_settings() -> Settings | None:
     load_dotenv()
-    if not _bool("GRAPH_PERSISTENCE_ENABLED"):
+    if not (_bool("GRAPH_PERSISTENCE_ENABLED") or _bool("NEO4J_SYNC_ENABLED")):
         return None
     required_names = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
     missing = [name for name in required_names if not os.getenv(name, "").strip()]
@@ -79,6 +88,31 @@ def load_ai_settings() -> AiSettings:
         base_url=base_url or "https://api.openai.com/v1",
         timeout_seconds=float(os.getenv("AI_TIMEOUT_SECONDS", "25")),
     )
+
+
+def load_rds_sync_settings() -> RdsSyncSettings:
+    load_dotenv()
+    database_url = _env("RDS_SYNC_DATABASE_URL") or _env("DB_URL")
+    username = _env("RDS_SYNC_USERNAME") or _env("DB_USERNAME")
+    password = _env("RDS_SYNC_PASSWORD") or _env("DB_PASSWORD")
+    if not database_url:
+        raise RuntimeError("RDS_SYNC_DATABASE_URL or DB_URL is required for RDS sync.")
+    if not username:
+        raise RuntimeError("RDS_SYNC_USERNAME or DB_USERNAME is required for RDS sync.")
+    if not password:
+        raise RuntimeError("RDS_SYNC_PASSWORD or DB_PASSWORD is required for RDS sync.")
+    return RdsSyncSettings(
+        database_url=database_url,
+        username=username,
+        password=password,
+        batch_size=max(1, int(os.getenv("RDS_SYNC_BATCH_SIZE", "100"))),
+        include_pii=_bool("GRAPH_INCLUDE_PII"),
+    )
+
+
+def include_graph_pii() -> bool:
+    load_dotenv()
+    return _bool("GRAPH_INCLUDE_PII")
 
 
 def _env(name: str, default: str = "") -> str:

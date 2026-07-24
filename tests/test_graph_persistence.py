@@ -26,6 +26,18 @@ def test_persist_consultation_graph_requires_neo4j_settings_when_enabled(monkeyp
         graph_persistence.persist_consultation_graph(request)
 
 
+def test_persist_consultation_graph_accepts_neo4j_sync_enabled_alias(monkeypatch):
+    monkeypatch.setenv("GRAPH_PERSISTENCE_ENABLED", "false")
+    monkeypatch.setenv("NEO4J_SYNC_ENABLED", "true")
+    monkeypatch.setenv("NEO4J_URI", "")
+    monkeypatch.setenv("NEO4J_USERNAME", "")
+    monkeypatch.setenv("NEO4J_PASSWORD", "")
+    request = ConsultationGraphSyncRequest.model_validate(graph_sync_payload())
+
+    with pytest.raises(RuntimeError, match="required when"):
+        graph_persistence.persist_consultation_graph(request)
+
+
 def test_persist_consultation_graph_wraps_auradb_failures(monkeypatch):
     monkeypatch.setenv("GRAPH_PERSISTENCE_ENABLED", "true")
     monkeypatch.setenv("NEO4J_URI", "neo4j+s://example.databases.neo4j.io")
@@ -54,6 +66,30 @@ def test_graph_sync_projection_uses_persisted_rds_ids():
         payload["followUpAiInsight"]["actionBasis"]
         == '{"description": "Offer starter plan.", "title": "Budget option"}'
     )
+
+
+def test_graph_sync_projection_omits_pii_by_default(monkeypatch):
+    monkeypatch.delenv("GRAPH_INCLUDE_PII", raising=False)
+    request = ConsultationGraphSyncRequest.model_validate(graph_sync_payload())
+
+    payload = graph_persistence._graph_sync_projection(request)
+
+    assert payload["customer"]["name"] is None
+    assert payload["customer"]["phoneNum"] is None
+    assert payload["customer"]["birthDate"] is None
+    assert payload["consultation"]["rawText"] is None
+    assert payload["consultation"]["summary"] == "Customer has price concern."
+
+
+def test_graph_sync_projection_can_include_pii(monkeypatch):
+    monkeypatch.setenv("GRAPH_INCLUDE_PII", "true")
+    request = ConsultationGraphSyncRequest.model_validate(graph_sync_payload())
+
+    payload = graph_persistence._graph_sync_projection(request)
+
+    assert payload["customer"]["name"] == "Hong"
+    assert payload["customer"]["phoneNum"] == "010-1234-5678"
+    assert payload["consultation"]["rawText"] == "price concern"
 
 
 def test_upsert_graph_sync_projection_writes_saved_ids_and_ontology_links():

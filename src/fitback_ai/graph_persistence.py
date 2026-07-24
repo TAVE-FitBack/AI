@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from .api_models import ConsultationGraphSyncRequest
-from .config import load_optional_settings
+from .config import include_graph_pii, load_optional_settings
 from .neo4j_loader import _counts, _driver, _upsert_ontology, setup_schema
 
 
@@ -28,6 +28,7 @@ def persist_consultation_graph(request: ConsultationGraphSyncRequest) -> dict[st
 
 def _graph_sync_projection(request: ConsultationGraphSyncRequest) -> dict[str, Any]:
     dumped = request.model_dump(mode="json", by_alias=False)
+    include_pii = include_graph_pii()
     return {
         "store": {
             "id": dumped["store"]["store_id"],
@@ -45,10 +46,10 @@ def _graph_sync_projection(request: ConsultationGraphSyncRequest) -> dict[str, A
             "id": dumped["customer"]["customer_id"],
             "storeId": dumped["customer"]["store_id"],
             "registeredServiceId": dumped["customer"]["registered_service_id"],
-            "name": dumped["customer"]["name"],
+            "name": dumped["customer"]["name"] if include_pii else None,
             "gender": dumped["customer"]["gender"],
-            "birthDate": dumped["customer"]["birth_date"],
-            "phoneNum": dumped["customer"]["phone_num"],
+            "birthDate": dumped["customer"]["birth_date"] if include_pii else None,
+            "phoneNum": dumped["customer"]["phone_num"] if include_pii else None,
             "preferredContactChannel": dumped["customer"]["preferred_contact_channel"],
             "status": dumped["customer"]["status"],
             "inflowPathId": dumped["customer"]["inflow_path_id"],
@@ -65,7 +66,7 @@ def _graph_sync_projection(request: ConsultationGraphSyncRequest) -> dict[str, A
             "consultedAt": dumped["consultation"]["consulted_at"],
             "stage": dumped["consultation"]["stage"],
             "sourceType": dumped["consultation"]["source_type"],
-            "rawText": dumped["consultation"]["raw_text"],
+            "rawText": dumped["consultation"]["raw_text"] if include_pii else None,
             "summary": dumped["consultation"]["summary"],
             "aiAnalysisStatus": dumped["consultation"]["ai_analysis_status"],
             "aiParsedAt": dumped["consultation"]["ai_parsed_at"],
@@ -144,7 +145,7 @@ def _upsert_graph_sync_projection(tx, payload: dict[str, Any]) -> None:
 
         MERGE (consultation:Consultation {id: $consultation.id})
         SET consultation += $consultation,
-            consultation.ragText = $consultation.rawText + ' ' + coalesce($consultation.summary, '')
+            consultation.ragText = coalesce($consultation.rawText, '') + ' ' + coalesce($consultation.summary, '')
         MERGE (customer)-[:HAD_CONSULTATION]->(consultation)
         MERGE (consultation)-[:ABOUT_SERVICE]->(service)
 
