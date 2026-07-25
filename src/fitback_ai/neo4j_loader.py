@@ -32,6 +32,7 @@ BUSINESS_LABELS = [
     "Customer",
     "Consultation",
     "FollowUp",
+    "FollowUpAiInsight",
     "NonConversionReason",
     "ConsultationSignal",
     "CustomerAiInsight",
